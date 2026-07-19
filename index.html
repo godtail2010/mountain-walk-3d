@@ -630,7 +630,7 @@ const env = { cloud: 0, vis: 1, precip: null, wind: 0, temp: null, label: '' };
 
 function solarDir(hour) {
   const rad = Math.PI / 180;
-  const phi = CENTER.lat * rad;
+  const phi = refLatLon().lat * rad;
   const now = new Date();
   const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
   const dec = -23.44 * rad * Math.cos(2 * Math.PI / 365 * (day + 10));
@@ -643,9 +643,17 @@ function solarDir(hour) {
 
 const FOG_DAY = new THREE.Color(0xc3d8ee), FOG_DUSK = new THREE.Color(0xe0a878), FOG_NIGHT = new THREE.Color(0x0b1322);
 const SUN_DAY = new THREE.Color(0xfff2e0), SUN_DUSK = new THREE.Color(0xff8844);
+// シームレスモードでは太陽・天気の基準を「今いる場所」にする
+function refLatLon() {
+  if (!SEAMLESS) return CENTER;
+  const p = worldToLonLat(camera.position.x, camera.position.z);
+  p.lon = ((p.lon + 180) % 360 + 360) % 360 - 180; // 連続経度を正規化
+  return p;
+}
+
 function sunriseSunset() {
   const rad = Math.PI / 180;
-  const phi = CENTER.lat * rad;
+  const phi = refLatLon().lat * rad;
   const now = new Date();
   const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
   const dec = -23.44 * rad * Math.cos(2 * Math.PI / 365 * (day + 10));
@@ -658,7 +666,7 @@ function applyEnvironment() {
   let hour;
   if (mode.h === 'dusk') hour = sunriseSunset().set - 0.25;
   else if (mode.h === 'dawn') hour = sunriseSunset().rise + 0.25;
-  else hour = mode.h ?? ((Date.now() / 3600000 % 24) + CENTER.lon / 15 + 24) % 24; // 現地の太陽時(UTC+経度)
+  else hour = mode.h ?? ((Date.now() / 3600000 % 24) + refLatLon().lon / 15 + 24) % 24; // 現地の太陽時(UTC+経度)
   const { elev, dir } = solarDir(hour);
   const dayF = THREE.MathUtils.clamp(Math.sin(elev) * 3, 0, 1);
   const duskF = THREE.MathUtils.clamp(1 - Math.abs(Math.sin(elev)) * 6, 0, 1);
@@ -713,7 +721,8 @@ function updatePrecip() {
 // 現地のリアルタイム天気(Open-Meteo)
 async function loadWeather() {
   try {
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${CENTER.lat}&longitude=${CENTER.lon}&current=temperature_2m,cloud_cover,wind_speed_10m,weather_code&timezone=auto&wind_speed_unit=ms`);
+    const ref = refLatLon();
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${ref.lat.toFixed(4)}&longitude=${ref.lon.toFixed(4)}&current=temperature_2m,cloud_cover,wind_speed_10m,weather_code&timezone=auto&wind_speed_unit=ms`);
     const j = await res.json();
     const c = j.current;
     env.cloud = (c.cloud_cover ?? 0) / 100;
@@ -1426,13 +1435,14 @@ const BOUNDS = (() => {
   return { s: lat(y0 + GRID), w: lon(x0), n: lat(y0), e: lon(x0 + GRID) };
 })();
 
-async function fetchRoutesOSM() {
-  const cacheKey = `routes_v1_${areaKey}`;
-  try {
-    const c = localStorage.getItem(cacheKey);
-    if (c) return JSON.parse(c);
-  } catch (e) { /* キャッシュ破損は無視 */ }
-  const bbox = `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
+async function fetchRoutesOSM(bbox = null, cacheKey = `routes_v1_${areaKey}`) {
+  if (cacheKey) {
+    try {
+      const c = localStorage.getItem(cacheKey);
+      if (c) return JSON.parse(c);
+    } catch (e) { /* キャッシュ破損は無視 */ }
+  }
+  bbox = bbox || `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
   const q = `[out:json][timeout:60];(relation["route"~"^(hiking|foot|pilgrimage)$"](${bbox});way["highway"~"^(path|footway|track|steps)$"]["name"](${bbox}););out geom;`;
   const servers = [
     'https://overpass-api.de/api/interpreter',
@@ -1466,7 +1476,9 @@ async function fetchRoutesOSM() {
     }
   }
   const out = polys.slice(0, 1500);
-  try { localStorage.setItem(cacheKey, JSON.stringify(out)); } catch (e) { /* 容量超過は無視 */ }
+  if (cacheKey) {
+    try { localStorage.setItem(cacheKey, JSON.stringify(out)); } catch (e) { /* 容量超過は無視 */ }
+  }
   return out;
 }
 
@@ -1487,13 +1499,21 @@ void main() {
 }
 
 function buildRoutes(polys) {
+  // 再構築(現在地追従)のため既存ルートを破棄
+  if (routesObj) {
+    scene.remove(routesObj);
+    routesObj.geometry.dispose();
+    routesObj.material.dispose();
+    routesObj = null;
+  }
+  routePolysMap.length = 0;
   const segs = [];
   for (const poly of polys) {
     const mapPoly = [];
     let prev = null;
     for (const [lat, lon] of poly) {
       const { x, z } = lonLatToWorld(lon, lat);
-      if (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995) {
+      if (!SEAMLESS && (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995)) {
         mapPoly.push(null);
         prev = null;
         continue;
@@ -1593,13 +1613,14 @@ function stitchRings(ways) {
   return rings;
 }
 
-async function fetchPOIs() {
-  const cacheKey = `pois_v4_${areaKey}`;
-  try {
-    const c = localStorage.getItem(cacheKey);
-    if (c) return JSON.parse(c);
-  } catch (e) { /* 無視 */ }
-  const bbox = `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
+async function fetchPOIs(bbox = null, cacheKey = `pois_v4_${areaKey}`) {
+  if (cacheKey) {
+    try {
+      const c = localStorage.getItem(cacheKey);
+      if (c) return JSON.parse(c);
+    } catch (e) { /* 無視 */ }
+  }
+  bbox = bbox || `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
   const q = `[out:json][timeout:60];(node["natural"~"^(peak|volcano)$"]["name"](${bbox});node["natural"="saddle"]["name"](${bbox});node["mountain_pass"="yes"]["name"](${bbox});node["tourism"~"^(alpine_hut|wilderness_hut|viewpoint)$"](${bbox});node["place"~"^(town|village|hamlet)$"]["name"](${bbox}););out body 600;(relation["natural"="water"](${bbox}););out geom 80;(way["natural"="water"](${bbox});way["water"~"^(lake|reservoir|lagoon)$"](${bbox}););out geom 250;`;
   const servers = [
     'https://overpass-api.de/api/interpreter',
@@ -1653,22 +1674,79 @@ async function fetchPOIs() {
     out.push({ name, type, lat: el.lat, lon: el.lon });
   }
   const result = { pois: out, water };
-  try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) { /* 無視 */ }
+  if (cacheKey) {
+    try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) { /* 無視 */ }
+  }
   return result;
+}
+
+function applyPOIData(data) {
+  pois = [];
+  for (const o of data.pois || []) {
+    const { x, z } = lonLatToWorld(o.lon, o.lat);
+    if (!SEAMLESS && (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995)) continue;
+    pois.push({ ...o, x, z, u: x / W + 0.5, v: z / W + 0.5 });
+  }
+  console.log('周辺スポット読み込み:', pois.length, '件');
+  buildWater(data.water);
 }
 
 function loadPOIs() {
   fetchPOIs().then(data => {
-    if (!data) return;
-    pois = [];
-    for (const o of data.pois || []) {
-      const { x, z } = lonLatToWorld(o.lon, o.lat);
-      if (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995) continue;
-      pois.push({ ...o, x, z, u: x / W + 0.5, v: z / W + 0.5 });
-    }
-    console.log('周辺スポット読み込み:', pois.length, '件');
-    buildWater(data.water);
+    if (data) applyPOIData(data);
   }).catch(e => console.warn('スポット取得失敗', e));
+}
+
+// ===== シームレスv2: 現在地周辺のデータ・環境を追従 =====
+let regionBusy = false;
+const lastRegion = { x: 0, z: 0, t: 0 };
+const lastEnvPos = { x: 0, z: 0 };
+const lastWeatherPos = { x: 0, z: 0, t: Date.now() };
+
+async function refreshRegionData() {
+  if (regionBusy) return;
+  regionBusy = true;
+  try {
+    const ref = refLatLon();
+    const dLat = 17000 / 111000;
+    const dLon = 17000 / (111000 * Math.cos(ref.lat * Math.PI / 180));
+    const wLon = ref.lon - dLon, eLon = ref.lon + dLon;
+    if (wLon < -180 || eLon > 180) return; // 日付変更線をまたぐ矩形は非対応(海上なので実害なし)
+    const bbox = `${(ref.lat - dLat).toFixed(4)},${wLon.toFixed(4)},${(ref.lat + dLat).toFixed(4)},${eLon.toFixed(4)}`;
+    const polys = await fetchRoutesOSM(bbox, null);
+    if (polys) {
+      routeCount = buildRoutes(polys);
+      routeStatus = routeCount ? 'ok' : 'none';
+      console.log('現在地周辺のルート更新:', routeCount, '本');
+    }
+    const pd = await fetchPOIs(bbox, null);
+    if (pd) applyPOIData(pd);
+  } catch (e) {
+    console.warn('周辺データ更新失敗', e);
+  } finally {
+    regionBusy = false;
+  }
+}
+
+function seamlessDataFollow() {
+  const p = camera.position;
+  // 太陽位置: 5km移動ごとに再計算
+  if (Math.hypot(p.x - lastEnvPos.x, p.z - lastEnvPos.z) > 5000) {
+    lastEnvPos.x = p.x; lastEnvPos.z = p.z;
+    applyEnvironment();
+  }
+  // 天気: 25km移動 + 60秒間隔で再取得
+  if (Math.hypot(p.x - lastWeatherPos.x, p.z - lastWeatherPos.z) > 25000 && Date.now() - lastWeatherPos.t > 60000) {
+    lastWeatherPos.x = p.x; lastWeatherPos.z = p.z; lastWeatherPos.t = Date.now();
+    loadWeather();
+  }
+  // ルート・スポット・湖: 12km移動 + 30秒間隔 + 低速時(高速飛行中は無駄なので省略)
+  if (velocity.length() < 150 &&
+      Math.hypot(p.x - lastRegion.x, p.z - lastRegion.z) > 12000 &&
+      Date.now() - lastRegion.t > 30000) {
+    lastRegion.x = p.x; lastRegion.z = p.z; lastRegion.t = Date.now();
+    refreshRegionData();
+  }
 }
 
 const SPOT_ICON = { peak: '⛰', pass: '🚩', hut: '🛖', view: '👀', place: '🏘' };
@@ -1761,8 +1839,16 @@ function ensureWaterMaterial() {
   return waterMat;
 }
 
+const lakeMeshes = [];
 function buildWater(waterPolys) {
   const mat = ensureWaterMaterial();
+  // 再構築(現在地追従)のため既存の湖を破棄(海プレーンは維持)
+  for (const m of lakeMeshes) {
+    scene.remove(m);
+    m.geometry.dispose();
+  }
+  lakeMeshes.length = 0;
+  waterCount = seaMesh ? 1 : 0;
   // 海(標高0m以下の領域がある場合のみ)
   if (terrainMinH < 0.5 && !seaMesh) {
     seaMesh = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.5, W * 1.5).rotateX(-Math.PI / 2), mat);
@@ -1776,7 +1862,7 @@ function buildWater(waterPolys) {
     const pts = [];
     for (const [lat, lon] of poly) {
       const { x, z } = lonLatToWorld(lon, lat);
-      if (Math.abs(x) < W / 2 * 0.995 && Math.abs(z) < W / 2 * 0.995) pts.push({ x, z });
+      if (SEAMLESS || (Math.abs(x) < W / 2 * 0.995 && Math.abs(z) < W / 2 * 0.995)) pts.push({ x, z });
     }
     if (pts.length < 4) continue;
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
@@ -1797,6 +1883,7 @@ function buildWater(waterPolys) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.y = level;
     scene.add(mesh);
+    lakeMeshes.push(mesh);
     waterCount++;
   }
   if (waterCount) {
@@ -2283,6 +2370,7 @@ function animate() {
     updateWind();
     if (SEAMLESS) {
       seamlessUpdate();
+      seamlessDataFollow();
       if (seaMesh) { seaMesh.position.x = camera.position.x; seaMesh.position.z = camera.position.z; }
     }
   }
@@ -2365,7 +2453,7 @@ window.__app = { camera, sampleHeight, lonLatToWorld, worldToLonLat, scene, rese
   updateSpots, mapView, env, applyEnvironment, updatePrecip, toggleGPS,
   get gpx() { return { track: gpxTrack, dist: gpxDist, playing: gpxPlaying }; },
   get chunks() { return [...chunkStore.entries()].map(([k, v]) => k + ':' + v.state); },
-  seamlessUpdate,
+  seamlessUpdate, refreshRegionData,
   get gpsStatus() { return gpsStatus; },
   drawBigMap() { drawMap(bmCtx, 1024, true); },
   get pois() { return pois; },
