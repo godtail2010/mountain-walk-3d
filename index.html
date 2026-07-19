@@ -1,0 +1,2384 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ヒマラヤ 3D散歩 — エベレスト周辺(実標高データ)</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1220; font-family: "Hiragino Sans", system-ui, sans-serif; }
+  canvas { display: block; touch-action: none; }
+  #joystick {
+    position: fixed; left: 22px; bottom: 22px; z-index: 6;
+    width: 124px; height: 124px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.10); border: 2px solid rgba(255, 255, 255, 0.30);
+    display: none; touch-action: none;
+  }
+  #joyKnob {
+    position: absolute; left: 50%; top: 50%; width: 54px; height: 54px;
+    margin: -27px 0 0 -27px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.55); box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  }
+  #mobileButtons {
+    position: fixed; right: 14px; bottom: 185px; z-index: 6;
+    display: none; flex-direction: column; gap: 10px;
+  }
+  .mbtn {
+    width: 48px; height: 48px; border-radius: 50%; font-size: 21px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(10, 18, 35, 0.55); color: #fff;
+    touch-action: none;
+  }
+  #btnMenu { position: fixed; right: 14px; top: 14px; z-index: 6; display: none; }
+
+  #overlay {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 15, 30, 0.72); backdrop-filter: blur(6px);
+    transition: opacity 0.4s;
+  }
+  #overlay.hidden { opacity: 0; pointer-events: none; }
+  #panel {
+    max-width: 520px; padding: 36px 44px; border-radius: 16px;
+    background: rgba(15, 25, 45, 0.9); border: 1px solid rgba(120, 170, 255, 0.25);
+    color: #e8f0ff; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  #panel h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: 0.05em; }
+  #panel .sub { margin: 0 0 16px; font-size: 13px; color: #9db8e0; }
+  #areas { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 18px; }
+  #areas button {
+    font-size: 13px; padding: 7px 14px; border-radius: 999px; cursor: pointer;
+    border: 1px solid rgba(120, 170, 255, 0.35);
+    background: rgba(40, 60, 100, 0.4); color: #cfe2ff;
+  }
+  #areas button:hover { background: rgba(70, 110, 180, 0.5); }
+  #areas button.active {
+    background: linear-gradient(180deg, #4da3ff, #2f7fe0); color: #fff;
+    border-color: transparent; font-weight: 700;
+  }
+  #customSearch { display: flex; gap: 8px; margin: 0 0 12px; }
+  #searchBox {
+    flex: 1; padding: 9px 12px; border-radius: 8px; font-size: 13px;
+    border: 1px solid rgba(120, 170, 255, 0.35);
+    background: rgba(10, 20, 40, 0.6); color: #e8f0ff;
+  }
+  #searchBtn {
+    padding: 9px 16px; border-radius: 8px; border: none; cursor: pointer;
+    background: rgba(70, 110, 180, 0.7); color: #fff; font-size: 13px;
+  }
+  #searchResults { text-align: left; margin: -4px 0 10px; max-height: 150px; overflow-y: auto; font-size: 12px; color: #9db8e0; }
+  #searchResults button {
+    display: block; width: 100%; text-align: left; margin: 4px 0; padding: 7px 10px;
+    font-size: 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid rgba(120, 170, 255, 0.2);
+    background: rgba(40, 60, 100, 0.35); color: #cfe2ff;
+  }
+  #searchResults button:hover { background: rgba(70, 110, 180, 0.5); }
+  #gpxBtn {
+    display: block; width: 100%; margin: 0 0 14px; padding: 9px 12px;
+    font-size: 13px; border-radius: 8px; cursor: pointer;
+    border: 1px dashed rgba(120, 170, 255, 0.4);
+    background: rgba(30, 45, 80, 0.35); color: #aecdf5;
+  }
+  #gpxBtn:hover { background: rgba(70, 110, 180, 0.45); }
+  #seamlessRow {
+    display: block; margin: 0 0 14px; font-size: 12px; color: #9db8e0;
+    cursor: pointer; text-align: left;
+  }
+  #status { font-size: 14px; color: #bcd2f5; min-height: 20px; margin: 0 0 10px; }
+  #bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.12); overflow: hidden; margin-bottom: 20px; }
+  #fill { height: 100%; width: 0%; border-radius: 4px; background: linear-gradient(90deg, #4da3ff, #9be0ff); transition: width 0.2s; }
+  #start {
+    font-size: 17px; padding: 12px 36px; border-radius: 10px; border: none; cursor: pointer;
+    background: linear-gradient(180deg, #4da3ff, #2f7fe0); color: #fff; font-weight: 700;
+  }
+  #start:disabled { opacity: 0.4; cursor: default; }
+  .help { margin-top: 18px; font-size: 12px; line-height: 1.9; color: #8fa9cf; }
+  .help b { color: #cfe2ff; font-weight: 600; }
+
+  #hud {
+    position: fixed; left: 14px; bottom: 14px; z-index: 5;
+    padding: 10px 14px; border-radius: 10px;
+    background: rgba(10, 18, 35, 0.6); color: #dbe9ff; font-size: 13px; line-height: 1.7;
+    pointer-events: none; display: none; white-space: pre;
+  }
+  #crosshair {
+    position: fixed; left: 50%; top: 50%; z-index: 5; width: 6px; height: 6px;
+    margin: -3px 0 0 -3px; border-radius: 50%;
+    background: rgba(255,255,255,0.85); box-shadow: 0 0 4px rgba(0,0,0,0.8);
+    display: none;
+  }
+  #minimap {
+    position: fixed; right: 14px; bottom: 14px; z-index: 5;
+    width: 210px; height: 210px; border-radius: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55);
+    display: none;
+  }
+  #bigmapWrap {
+    position: fixed; inset: 0; z-index: 8;
+    display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: rgba(5, 10, 22, 0.6); backdrop-filter: blur(3px);
+  }
+  #bigmap {
+    width: min(80vmin, 860px); height: min(80vmin, 860px);
+    border-radius: 14px; border: 2px solid rgba(255, 255, 255, 0.45);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  }
+  #bigmapCaption { color: #cfe2ff; font-size: 13px; text-shadow: 0 1px 3px rgba(0,0,0,0.8); }
+  #bigmapBox { position: relative; }
+  #mapZoomBtns { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .zbtn {
+    width: 44px; height: 44px; border-radius: 10px; font-size: 24px; line-height: 1;
+    background: rgba(10, 18, 35, 0.78); color: #fff; cursor: pointer;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+  }
+  .zbtn:hover { background: rgba(45, 75, 130, 0.85); }
+  #gmapLink { color: #8fc5ff; cursor: pointer; text-decoration: underline; pointer-events: auto; }
+  #spots {
+    position: fixed; right: 14px; top: 14px; z-index: 5;
+    padding: 10px 14px; border-radius: 10px; min-width: 200px;
+    background: rgba(10, 18, 35, 0.6); color: #dbe9ff; font-size: 12px; line-height: 1.9;
+    pointer-events: none; display: none; white-space: pre;
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="overlay">
+  <div id="panel">
+    <h1 id="title">3D山岳散歩</h1>
+    <p class="sub" id="sub">実標高データ(SRTM) + 衛星写真 約34km四方</p>
+    <div id="areas"></div>
+    <div id="customSearch">
+      <input id="searchBox" type="text" placeholder="世界中の山名・地名で検索(例: 槍ヶ岳 / Denali / 27.98,86.92)">
+      <button id="searchBtn">検索</button>
+    </div>
+    <div id="searchResults"></div>
+    <button id="gpxBtn">📂 GPXファイルを読み込む(山行ログを3Dで再訪・Pキーで再生)</button>
+    <label id="seamlessRow"><input type="checkbox" id="seamlessChk"> シームレスモード(実験的): エリア境界なしでどこまでも歩ける</label>
+    <input type="file" id="gpxFile" accept=".gpx" style="display:none">
+    <p id="status">標高データを読み込み中…</p>
+    <div id="bar"><div id="fill"></div></div>
+    <button id="start" disabled>読み込み中…</button>
+    <div class="help">
+      <b>W A S D / 矢印</b>: 移動 &nbsp; <b>マウス</b>: 視点 &nbsp; <b>Shift</b>: ダッシュ<br>
+      <b>F</b>: 徒歩/飛行モード切替 &nbsp; <b>Space / C</b>: 上昇/下降(飛行時)<br>
+      <b>M</b>: 全体マップ(ズーム可) &nbsp; <b>T</b>: 登山ルート表示 &nbsp; <b>G</b>: Googleマップで現在地 &nbsp; <b>+ / -</b>: 速度<br>
+      <b>L</b>: 時間帯(昼/夕/夜/朝/現地時刻) &nbsp; <b>K</b>: 天気効果 &nbsp; <b>N</b>: 風音 &nbsp; <b>R</b>: 初期位置 &nbsp; <b>Esc</b>: メニュー<br>
+      <b>P</b>: GPX再生 &nbsp; <b>O</b>: GPS追従(実地登山用・HTTPS時)
+    </div>
+  </div>
+</div>
+<div id="hud"></div>
+<div id="spots"></div>
+<div id="crosshair"></div>
+<canvas id="minimap" width="420" height="420"></canvas>
+<div id="joystick"><div id="joyKnob"></div></div>
+<div id="mobileButtons">
+  <button class="mbtn" id="btnUp">▲</button>
+  <button class="mbtn" id="btnDown">▼</button>
+  <button class="mbtn" id="btnMode">✈</button>
+  <button class="mbtn" id="btnTime">🌅</button>
+  <button class="mbtn" id="btnGPS">📡</button>
+  <button class="mbtn" id="btnMap">🗺</button>
+</div>
+<button class="mbtn" id="btnMenu">☰</button>
+<div id="bigmapWrap">
+  <div id="bigmapBox">
+    <canvas id="bigmap" width="1024" height="1024"></canvas>
+    <div id="mapZoomBtns">
+      <button class="zbtn" id="zoomIn">＋</button>
+      <button class="zbtn" id="zoomOut">−</button>
+      <button class="zbtn" id="zoomReset" title="全体に戻す">⛶</button>
+    </div>
+  </div>
+  <div id="bigmapCaption">＋−ボタン / ホイール / ピンチ: ズーム &nbsp; ドラッグ: 移動 &nbsp; M: 閉じる &nbsp; <span id="gmapLink">📍 Googleマップで現在地を開く</span></div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+// ===== エリア定義 =====
+const AREAS = {
+  everest: {
+    label: 'エベレスト', sub: 'ヒマラヤ・クーンブ山群(ネパール)',
+    startName: 'カラ・パタール',
+    center: { lat: 27.9881, lon: 86.9250 },
+    start:  { lat: 27.9956, lon: 86.8283 },
+    look:   { lat: 27.9881, lon: 86.9250 },
+    peaks: [
+      { name: 'エベレスト 8,849m',     lat: 27.9881, lon: 86.9250 },
+      { name: 'ローツェ 8,516m',       lat: 27.9617, lon: 86.9333 },
+      { name: 'ヌプツェ 7,861m',       lat: 27.9667, lon: 86.8892 },
+      { name: 'チャンツェ 7,543m',     lat: 28.0244, lon: 86.9209 },
+      { name: 'プモリ 7,161m',         lat: 28.0143, lon: 86.8281 },
+      { name: 'アマ・ダブラム 6,812m', lat: 27.8616, lon: 86.8614 },
+      { name: 'カラ・パタール 5,644m', lat: 27.9956, lon: 86.8283 },
+    ],
+  },
+  annapurna: {
+    label: 'アンナプルナ', sub: 'アンナプルナ内院(ネパール)',
+    startName: 'アンナプルナ・ベースキャンプ',
+    center: { lat: 28.5700, lon: 83.8900 },
+    start:  { lat: 28.5306, lon: 83.8795 },
+    look:   { lat: 28.5961, lon: 83.8203 },
+    peaks: [
+      { name: 'アンナプルナI峰 8,091m',   lat: 28.5961, lon: 83.8203 },
+      { name: 'アンナプルナIII峰 7,555m', lat: 28.5847, lon: 83.9895 },
+      { name: 'ガンガプルナ 7,455m',      lat: 28.6064, lon: 83.9636 },
+      { name: 'アンナプルナ・サウス 7,219m', lat: 28.5178, lon: 83.8058 },
+      { name: 'マチャプチャレ 6,993m',    lat: 28.4953, lon: 83.9482 },
+      { name: 'ヒウンチュリ 6,441m',      lat: 28.5158, lon: 83.8322 },
+    ],
+  },
+  k2: {
+    label: 'K2', sub: 'カラコルム・バルトロ氷河(パキスタン)',
+    startName: 'コンコルディア',
+    center: { lat: 35.8000, lon: 76.5700 },
+    start:  { lat: 35.7442, lon: 76.5150 },
+    look:   { lat: 35.8808, lon: 76.5133 },
+    peaks: [
+      { name: 'K2 8,611m',                lat: 35.8808, lon: 76.5133 },
+      { name: 'ブロード・ピーク 8,051m',  lat: 35.8108, lon: 76.5683 },
+      { name: 'ガッシャーブルムI峰 8,080m',  lat: 35.7242, lon: 76.6964 },
+      { name: 'ガッシャーブルムII峰 8,035m', lat: 35.7575, lon: 76.6533 },
+      { name: 'ガッシャーブルムIV峰 7,925m', lat: 35.7594, lon: 76.6158 },
+      { name: 'ムスターグ・タワー 7,276m',   lat: 35.8272, lon: 76.4368 },
+    ],
+  },
+  fuji: {
+    label: '富士山', sub: '富士山と富士五湖(日本)',
+    startName: '河口湖畔',
+    center: { lat: 35.4200, lon: 138.7200 },
+    start:  { lat: 35.5000, lon: 138.7550 },
+    look:   { lat: 35.3606, lon: 138.7274 },
+    peaks: [
+      { name: '富士山 3,776m',   lat: 35.3606, lon: 138.7274 },
+      { name: '宝永山 2,693m',   lat: 35.3491, lon: 138.7530 },
+      { name: '三ツ峠山 1,785m', lat: 35.5522, lon: 138.8110 },
+    ],
+  },
+  kailash: {
+    label: 'カイラス山', sub: 'カン・リンポチェ、チベット高原(中国)',
+    startName: 'バルカ平原(聖山の展望地)',
+    center: { lat: 31.0000, lon: 81.3200 },
+    start:  { lat: 30.9000, lon: 81.3110 },
+    look:   { lat: 31.0675, lon: 81.3119 },
+    peaks: [
+      { name: 'カイラス山 6,638m', lat: 31.0675, lon: 81.3119 },
+      { name: 'ダルチェン 4,575m', lat: 30.9600, lon: 81.3110 },
+    ],
+  },
+  tonodake: {
+    label: '塔ノ岳', sub: '丹沢山地(神奈川県)',
+    startName: '塔ノ岳山頂', lookName: '大山・秦野盆地方面',
+    center: { lat: 35.4600, lon: 139.1600 },
+    start:  { lat: 35.4540, lon: 139.1637 },
+    look:   { lat: 35.4408, lon: 139.2313 },
+    peaks: [
+      { name: '塔ノ岳 1,491m', lat: 35.4540, lon: 139.1637 },
+      { name: '丹沢山 1,567m', lat: 35.4744, lon: 139.1622 },
+      { name: '蛭ヶ岳 1,673m', lat: 35.4863, lon: 139.1391 },
+      { name: '鍋割山 1,272m', lat: 35.4462, lon: 139.1401 },
+      { name: '大山 1,252m',   lat: 35.4408, lon: 139.2313 },
+      { name: '三ノ塔 1,205m', lat: 35.4283, lon: 139.1817 },
+    ],
+  },
+  matterhorn: {
+    label: 'マッターホルン', sub: 'ヴァリス・アルプス(スイス)',
+    startName: 'ツェルマット',
+    center: { lat: 45.9900, lon: 7.7200 },
+    start:  { lat: 46.0207, lon: 7.7491 },
+    look:   { lat: 45.9763, lon: 7.6586 },
+    peaks: [
+      { name: 'マッターホルン 4,478m', lat: 45.9763, lon: 7.6586 },
+      { name: 'モンテ・ローザ 4,634m', lat: 45.9369, lon: 7.8669 },
+      { name: 'ヴァイスホルン 4,506m', lat: 46.1017, lon: 7.7158 },
+      { name: 'ダン・ブランシュ 4,357m', lat: 46.0342, lon: 7.6122 },
+      { name: 'ブライトホルン 4,164m',  lat: 45.9422, lon: 7.7484 },
+    ],
+  },
+};
+const QS = new URLSearchParams(location.search);
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || QS.has('touch');
+const SEAMLESS = QS.has('seamless');
+let areaKey, AREA;
+{
+  const clat = parseFloat(QS.get('lat'));
+  const clon = parseFloat(QS.get('lon'));
+  if (Number.isFinite(clat) && Number.isFinite(clon) && Math.abs(clat) <= 72) {
+    const nm = (QS.get('name') || 'カスタム地点').slice(0, 40);
+    areaKey = `custom_${clat.toFixed(3)}_${clon.toFixed(3)}`;
+    AREA = {
+      label: nm, sub: `緯度 ${clat.toFixed(4)} / 経度 ${clon.toFixed(4)}`, startName: nm, lookName: '北方向',
+      center: { lat: clat, lon: clon },
+      start:  { lat: clat, lon: clon },
+      look:   { lat: clat + 0.03, lon: clon }, // 北向きでスタート
+      lookHorizon: true, // 水平視線(目標地点の地面ではなく目線の高さを見る)
+      peaks: [{ name: nm, lat: clat, lon: clon }],
+    };
+  } else {
+    const k = QS.get('area');
+    areaKey = AREAS[k] ? k : 'everest';
+    AREA = AREAS[areaKey];
+  }
+}
+
+// ===== 設定 =====
+const CENTER = AREA.center;
+// 日本国内は国土地理院の高解像度DEM(10m級)を自動採用
+const IN_JAPAN = CENTER.lat >= 24 && CENTER.lat <= 46 && CENTER.lon >= 122 && CENTER.lon <= 147;
+const ZOOM = IN_JAPAN ? 13 : 12;  // 標高タイルのズーム(日本: 約17m/px、海外: 約34m/px)
+const GRID = IN_JAPAN ? 8 : 4;    // どちらも約34km四方
+const TEX_ZOOM = 14;              // 衛星写真のズーム(約8.4m/px)
+const N = GRID * 256;             // ハイトマップ解像度 (日本2048 / 海外1024)
+const EYE = 1.7;          // 目線の高さ(m)
+const START = AREA.start;
+const PEAKS = AREA.peaks;
+
+// ===== タイル座標計算 =====
+const lonToTX = (lon, z) => (lon + 180) / 360 * 2 ** z;
+const latToTY = (lat, z) => {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z;
+};
+const x0 = Math.round(lonToTX(CENTER.lon, ZOOM)) - GRID / 2;
+const y0 = Math.round(latToTY(CENTER.lat, ZOOM)) - GRID / 2;
+const MPP = 156543.03392 * Math.cos(CENTER.lat * Math.PI / 180) / 2 ** ZOOM; // m/px
+const W = N * MPP; // ワールドの一辺(m)
+
+function lonLatToWorld(lon, lat) {
+  const px = (lonToTX(lon, ZOOM) - x0) * 256;
+  const py = (latToTY(lat, ZOOM) - y0) * 256;
+  return { x: (px / (N - 1) - 0.5) * W, z: (py / (N - 1) - 0.5) * W };
+}
+function worldToLonLat(x, z) {
+  const px = (x / W + 0.5) * (N - 1);
+  const py = (z / W + 0.5) * (N - 1);
+  const lon = (x0 + px / 256) / 2 ** ZOOM * 360 - 180;
+  const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y0 + py / 256) / 2 ** ZOOM))) * 180 / Math.PI;
+  return { lat, lon };
+}
+
+// ===== 読み込みUI =====
+document.title = `${AREA.label} 3D散歩 — 実標高データ`;
+document.getElementById('title').textContent = `${AREA.label} 3D散歩`;
+document.getElementById('sub').textContent = `${AREA.sub} — 実標高データ(SRTM) + 衛星写真`;
+const areasEl = document.getElementById('areas');
+for (const [key, a] of Object.entries(AREAS)) {
+  const b = document.createElement('button');
+  b.textContent = a.label;
+  if (key === areaKey) b.classList.add('active');
+  b.addEventListener('click', () => {
+    if (key !== areaKey) location.search = '?area=' + key;
+  });
+  areasEl.appendChild(b);
+}
+
+// ===== カスタム地点検索(Nominatim) =====
+const searchBox = document.getElementById('searchBox');
+const searchBtn = document.getElementById('searchBtn');
+const searchResults = document.getElementById('searchResults');
+function gotoCustom(lat, lon, name) {
+  if (Math.abs(lat) > 72) { searchResults.textContent = '高緯度(72度超)は標高データがありません'; return; }
+  location.search = `?lat=${(+lat).toFixed(5)}&lon=${(+lon).toFixed(5)}&name=${encodeURIComponent(name)}`;
+}
+async function doSearch() {
+  const q = searchBox.value.trim();
+  if (!q) return;
+  const m = q.match(/^(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)$/);
+  if (m) return gotoCustom(parseFloat(m[1]), parseFloat(m[2]), `${m[1]}, ${m[2]}`);
+  searchResults.textContent = '検索中…';
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=ja&q=${encodeURIComponent(q)}`);
+    const list = await res.json();
+    searchResults.textContent = '';
+    if (!list.length) { searchResults.textContent = '見つかりませんでした'; return; }
+    for (const r of list) {
+      const b = document.createElement('button');
+      b.textContent = r.display_name.split(',').slice(0, 3).join(',');
+      b.addEventListener('click', () => gotoCustom(+r.lat, +r.lon, r.display_name.split(',')[0].trim()));
+      searchResults.appendChild(b);
+    }
+  } catch (e) {
+    searchResults.textContent = '検索に失敗しました(時間をおいて再試行してください)';
+  }
+}
+searchBtn.addEventListener('click', doSearch);
+searchBox.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+// シームレスモード切替
+const seamlessChk = document.getElementById('seamlessChk');
+seamlessChk.checked = SEAMLESS;
+seamlessChk.addEventListener('change', () => {
+  const p = new URLSearchParams(location.search);
+  if (seamlessChk.checked) p.set('seamless', '1');
+  else p.delete('seamless');
+  location.search = p.toString();
+});
+
+// ===== GPXファイル読み込み =====
+const gpxFileEl = document.getElementById('gpxFile');
+document.getElementById('gpxBtn').addEventListener('click', () => gpxFileEl.click());
+gpxFileEl.addEventListener('change', async () => {
+  const f = gpxFileEl.files[0];
+  if (!f) return;
+  try {
+    const xml = new DOMParser().parseFromString(await f.text(), 'application/xml');
+    const pts = [...xml.querySelectorAll('trkpt, rtept')]
+      .map(p => [parseFloat(p.getAttribute('lat')), parseFloat(p.getAttribute('lon'))])
+      .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+    if (pts.length < 2) { alert('GPX内にトラックポイントが見つかりませんでした'); return; }
+    const step = Math.ceil(pts.length / 4000);
+    const dec = pts.filter((_, i) => i % step === 0);
+    const name = f.name.replace(/\.gpx$/i, '');
+    localStorage.setItem('gpx_track', JSON.stringify({ name, points: dec }));
+    let sLat = 0, sLon = 0;
+    for (const p of dec) { sLat += p[0]; sLon += p[1]; }
+    location.search = `?lat=${(sLat / dec.length).toFixed(5)}&lon=${(sLon / dec.length).toFixed(5)}&name=${encodeURIComponent(name)}&gpx=1`;
+  } catch (e) {
+    alert('GPXの読み込みに失敗しました: ' + e.message);
+  }
+});
+
+const statusEl = document.getElementById('status');
+const fillEl = document.getElementById('fill');
+const startBtn = document.getElementById('start');
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+const crosshair = document.getElementById('crosshair');
+const TOTAL_TILES = GRID * GRID + (GRID * 2 ** (TEX_ZOOM - ZOOM)) ** 2; // 標高 + 衛星
+let loaded = 0;
+function tick(msg) {
+  loaded++;
+  fillEl.style.width = (loaded / TOTAL_TILES * 100).toFixed(1) + '%';
+  if (msg) statusEl.textContent = msg;
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('failed: ' + url));
+    img.src = url;
+  });
+}
+async function pool(tasks, limit) {
+  const results = new Array(tasks.length);
+  let i = 0;
+  async function worker() {
+    while (i < tasks.length) { const k = i++; results[k] = await tasks[k]().catch(e => e); }
+  }
+  await Promise.all(Array.from({ length: limit }, worker));
+  return results;
+}
+
+// ===== 標高データ(Terrarium) =====
+const heights = new Float32Array(N * N);
+let terrainMinH = Infinity;
+async function loadElevation() {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  const tasks = [];
+  for (let ty = 0; ty < GRID; ty++) for (let tx = 0; tx < GRID; tx++) {
+    tasks.push(async () => {
+      let img = null, gsi = false;
+      if (IN_JAPAN) {
+        // 国土地理院DEM(10m級)。海上・国外タイルは404になるのでterrariumへフォールバック
+        try {
+          img = await loadImage(`https://cyberjapandata.gsi.go.jp/xyz/dem_png/${ZOOM}/${x0 + tx}/${y0 + ty}.png`);
+          gsi = true;
+        } catch (e) { /* fallback */ }
+      }
+      if (!img) img = await loadImage(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${ZOOM}/${x0 + tx}/${y0 + ty}.png`);
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, 256, 256).data;
+      for (let j = 0; j < 256; j++) for (let i = 0; i < 256; i++) {
+        const p = (j * 256 + i) * 4;
+        let h;
+        if (gsi) {
+          const v = d[p] * 65536 + d[p + 1] * 256 + d[p + 2];
+          h = v === 8388608 ? 0 : v < 8388608 ? v * 0.01 : (v - 16777216) * 0.01;
+        } else {
+          h = d[p] * 256 + d[p + 1] + d[p + 2] / 256 - 32768;
+        }
+        heights[(ty * 256 + j) * N + tx * 256 + i] = h;
+        if (h < terrainMinH) terrainMinH = h;
+      }
+      tick(`標高データ読み込み中… (${loaded + 1}/${TOTAL_TILES})`);
+    });
+  }
+  const res = await pool(tasks, 12);
+  const fails = res.filter(r => r instanceof Error);
+  if (fails.length) throw new Error(`標高タイルの取得に失敗 (${fails.length}/${GRID * GRID})`);
+}
+
+function sampleHeightArea(x, z) {
+  const fx = Math.min(N - 1.001, Math.max(0, (x / W + 0.5) * (N - 1)));
+  const fz = Math.min(N - 1.001, Math.max(0, (z / W + 0.5) * (N - 1)));
+  const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+  const h00 = heights[j * N + i], h10 = heights[j * N + i + 1];
+  const h01 = heights[(j + 1) * N + i], h11 = heights[(j + 1) * N + i + 1];
+  return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
+}
+function sampleHeight(x, z) {
+  return SEAMLESS ? sampleHeightSeamless(x, z) : sampleHeightArea(x, z);
+}
+
+// ===== 衛星写真テクスチャ =====
+async function loadImagery() {
+  const T = GRID * 2 ** (TEX_ZOOM - ZOOM); // 一辺のタイル数 (16)
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = T * 256;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#8a9aa8';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const bx = x0 * 2 ** (TEX_ZOOM - ZOOM), by = y0 * 2 ** (TEX_ZOOM - ZOOM);
+  const tasks = [];
+  for (let ty = 0; ty < T; ty++) for (let tx = 0; tx < T; tx++) {
+    tasks.push(async () => {
+      const img = await loadImage(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${TEX_ZOOM}/${by + ty}/${bx + tx}`);
+      ctx.drawImage(img, tx * 256, ty * 256);
+      tick(`衛星写真読み込み中… (${loaded + 1}/${TOTAL_TILES})`);
+    });
+  }
+  const res = await pool(tasks, 24);
+  const fails = res.filter(r => r instanceof Error).length;
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  return { tex, fails, total: T * T };
+}
+
+// ===== シーン構築 =====
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0xc3d8ee, 0.000022);
+
+const camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 1.5, 150000);
+
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.8;
+
+const sun = new THREE.DirectionalLight(0xfff2e0, 2.8);
+sun.position.set(0.55, 0.75, -0.35).multiplyScalar(20000);
+scene.add(sun);
+const hemi = new THREE.HemisphereLight(0xbdd7f5, 0x6b6f66, 1.25);
+scene.add(hemi);
+
+// ===== 空(物理ベース)・星空・時間帯 =====
+const sky = new Sky();
+sky.scale.setScalar(400000);
+scene.add(sky);
+const skyU = sky.material.uniforms;
+skyU.turbidity.value = 5;
+skyU.rayleigh.value = 1.5;
+skyU.mieCoefficient.value = 0.004;
+skyU.mieDirectionalG.value = 0.8;
+
+const stars = (() => {
+  const n = 2600;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const t = Math.random() * Math.PI * 2;
+    const u = Math.random() * 0.94 + 0.06; // 上半球
+    const r = 120000;
+    const s = Math.sqrt(1 - u * u);
+    pos[i * 3] = Math.cos(t) * s * r;
+    pos[i * 3 + 1] = u * r;
+    pos[i * 3 + 2] = Math.sin(t) * s * r;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({
+    color: 0xffffff, size: 320, sizeAttenuation: true,
+    transparent: true, opacity: 0, fog: false, depthWrite: false,
+  });
+  return new THREE.Points(g, m);
+})();
+scene.add(stars);
+
+const TIME_MODES = [
+  { name: '昼', h: 12 },
+  { name: '夕方', h: 'dusk' },   // 日没直前(季節で自動計算)
+  { name: '夜', h: 0 },
+  { name: '朝', h: 'dawn' },     // 日の出直後
+  { name: '現地時刻', h: null },
+];
+let timeIdx = 0;
+let envOn = true; // K: 天気効果の有効/無効
+const env = { cloud: 0, vis: 1, precip: null, wind: 0, temp: null, label: '' };
+
+function solarDir(hour) {
+  const rad = Math.PI / 180;
+  const phi = CENTER.lat * rad;
+  const now = new Date();
+  const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
+  const dec = -23.44 * rad * Math.cos(2 * Math.PI / 365 * (day + 10));
+  const H = (hour - 12) * 15 * rad;
+  const elev = Math.asin(Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(H));
+  const azS = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi));
+  const A = azS + Math.PI; // 北基準の方位
+  return { elev, dir: new THREE.Vector3(Math.sin(A) * Math.cos(elev), Math.sin(elev), -Math.cos(A) * Math.cos(elev)) };
+}
+
+const FOG_DAY = new THREE.Color(0xc3d8ee), FOG_DUSK = new THREE.Color(0xe0a878), FOG_NIGHT = new THREE.Color(0x0b1322);
+const SUN_DAY = new THREE.Color(0xfff2e0), SUN_DUSK = new THREE.Color(0xff8844);
+function sunriseSunset() {
+  const rad = Math.PI / 180;
+  const phi = CENTER.lat * rad;
+  const now = new Date();
+  const day = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 864e5);
+  const dec = -23.44 * rad * Math.cos(2 * Math.PI / 365 * (day + 10));
+  const H0 = Math.acos(Math.max(-1, Math.min(1, -Math.tan(phi) * Math.tan(dec)))) / (15 * rad);
+  return { rise: 12 - H0, set: 12 + H0 };
+}
+
+function applyEnvironment() {
+  const mode = TIME_MODES[timeIdx];
+  let hour;
+  if (mode.h === 'dusk') hour = sunriseSunset().set - 0.25;
+  else if (mode.h === 'dawn') hour = sunriseSunset().rise + 0.25;
+  else hour = mode.h ?? ((Date.now() / 3600000 % 24) + CENTER.lon / 15 + 24) % 24; // 現地の太陽時(UTC+経度)
+  const { elev, dir } = solarDir(hour);
+  const dayF = THREE.MathUtils.clamp(Math.sin(elev) * 3, 0, 1);
+  const duskF = THREE.MathUtils.clamp(1 - Math.abs(Math.sin(elev)) * 6, 0, 1);
+  const nightF = THREE.MathUtils.clamp(-Math.sin(elev) * 5, 0, 1); // 日没後にのみ夜へ移行
+  const cloud = envOn ? env.cloud : 0;
+  const visF = envOn ? env.vis : 1;
+
+  sun.position.copy(dir).multiplyScalar(20000);
+  sun.intensity = (0.05 + 2.75 * dayF + 1.2 * duskF) * (1 - cloud * 0.75);
+  sun.color.copy(SUN_DAY).lerp(SUN_DUSK, duskF);
+  hemi.intensity = 0.25 + (1.25 * dayF + 2.6 * duskF) * (1 - cloud * 0.35);
+
+  scene.fog.density = 0.000022 / Math.max(0.15, visF) * (1 + cloud * 1.2);
+  scene.fog.color.copy(FOG_DAY).lerp(FOG_DUSK, duskF).lerp(FOG_NIGHT, nightF);
+
+  skyU.sunPosition.value.copy(dir);
+  skyU.turbidity.value = Math.max(2, 4 + cloud * 16 + duskF * 3 - nightF * 2);
+  skyU.rayleigh.value = (1.3 + duskF * 2.2) * (1 - nightF * 0.75);
+  stars.material.opacity = Math.min(1, Math.max(0, nightF - 0.15) * 1.6 * (1 - cloud * 0.8));
+  renderer.toneMappingExposure = 0.8 - nightF * 0.42;
+
+  // 水面の反射色を時間帯・天気に連動
+  if (waterMat) {
+    const u = waterMat.uniforms;
+    u.uSunDir.value.copy(dir);
+    u.uSunCol.value.copy(sun.color).multiplyScalar(Math.min(1.4, sun.intensity * 0.55));
+    u.uSky.value.set(0x2b6cb8).lerp(scene.fog.color, 1 - dayF * 0.65);
+    u.uHorizon.value.copy(scene.fog.color);
+    u.uDeep.value.set(0x11303f).multiplyScalar(0.25 + dayF * 0.75);
+  }
+}
+
+// 降水パーティクル(雨・雪)
+let precipObj = null;
+function updatePrecip() {
+  if (precipObj) { scene.remove(precipObj); precipObj.geometry.dispose(); precipObj.material.dispose(); precipObj = null; }
+  if (!envOn || !env.precip) return;
+  const n = 4500, box = 400;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n * 3; i++) pos[i] = (Math.random() - 0.5) * box;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({
+    color: env.precip === 'snow' ? 0xffffff : 0x9db8d0,
+    size: env.precip === 'snow' ? 0.55 : 0.3,
+    transparent: true, opacity: 0.85, depthWrite: false, sizeAttenuation: true,
+  });
+  precipObj = new THREE.Points(g, m);
+  scene.add(precipObj);
+}
+
+// 現地のリアルタイム天気(Open-Meteo)
+async function loadWeather() {
+  try {
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${CENTER.lat}&longitude=${CENTER.lon}&current=temperature_2m,cloud_cover,wind_speed_10m,weather_code&timezone=auto&wind_speed_unit=ms`);
+    const j = await res.json();
+    const c = j.current;
+    env.cloud = (c.cloud_cover ?? 0) / 100;
+    env.wind = c.wind_speed_10m ?? 0;
+    env.temp = c.temperature_2m ?? null;
+    const code = c.weather_code ?? 0;
+    env.precip =
+      (code >= 71 && code <= 77) || code === 85 || code === 86 ? 'snow'
+      : (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95 ? 'rain'
+      : null;
+    if (env.precip === 'rain' && env.temp !== null && env.temp <= 0.5) env.precip = 'snow';
+    env.vis = env.precip ? 0.3 : 1 - env.cloud * 0.35;
+    const icon = env.precip === 'snow' ? '🌨' : env.precip === 'rain' ? '🌧' : env.cloud > 0.7 ? '☁' : env.cloud > 0.3 ? '⛅' : '☀';
+    env.label = `${icon} 雲${(env.cloud * 100).toFixed(0)}% ${env.temp !== null ? env.temp.toFixed(0) + '°C ' : ''}風${env.wind.toFixed(0)}m/s`;
+    applyEnvironment();
+    updatePrecip();
+    console.log('現地の天気:', env.label);
+  } catch (e) { console.warn('天気取得失敗', e); }
+}
+
+// 風の環境音(WebAudio合成)
+let audio = null, windOn = true;
+function ensureAudio() {
+  if (audio) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const len = ctx.sampleRate * 3;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++) {
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.5;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 350;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+    audio = { ctx, gain, filter };
+  } catch (e) { /* 音声非対応環境 */ }
+}
+function updateWind() {
+  if (!audio) return;
+  const active = controls.isLocked || mobileActive;
+  const alt = Math.max(0, camera.position.y);
+  const target = windOn && active
+    ? Math.min(0.22, 0.03 + alt / 9000 * 0.08 + (envOn ? env.wind : 3) / 40 * 0.12)
+    : 0;
+  audio.gain.gain.setTargetAtTime(target, audio.ctx.currentTime, 0.6);
+  audio.filter.frequency.setTargetAtTime(280 + (envOn ? env.wind : 3) * 25 + alt / 40, audio.ctx.currentTime, 0.6);
+}
+
+// 地形マテリアル(衛星写真 + 至近距離用ディテールノイズ)。fはUVスケール係数(チャンクと共用)
+let detailTexCache = null;
+function ensureDetailTex() {
+  if (detailTexCache) return detailTexCache;
+  const dc = document.createElement('canvas');
+  dc.width = dc.height = 256;
+  const dctx = dc.getContext('2d');
+  dctx.fillStyle = '#909090';
+  dctx.fillRect(0, 0, 256, 256);
+  dctx.imageSmoothingEnabled = true;
+  for (const res of [8, 16, 32, 64, 128]) {
+    const t = document.createElement('canvas');
+    t.width = t.height = res;
+    const tc = t.getContext('2d');
+    const im = tc.createImageData(res, res);
+    for (let p = 0; p < res * res; p++) {
+      const v = Math.random() * 255;
+      im.data[p * 4] = im.data[p * 4 + 1] = im.data[p * 4 + 2] = v;
+      im.data[p * 4 + 3] = 255;
+    }
+    tc.putImageData(im, 0, 0);
+    dctx.globalAlpha = 0.22;
+    dctx.drawImage(t, 0, 0, 256, 256);
+  }
+  dctx.globalAlpha = 1;
+  const dimg = dctx.getImageData(0, 0, 256, 256);
+  const dd = dimg.data;
+  let dsum = 0;
+  for (let p = 0; p < 256 * 256; p++) dsum += dd[p * 4];
+  const rawMean = dsum / (256 * 256);
+  for (let p = 0; p < 256 * 256; p++) {
+    const v = Math.max(0, Math.min(255, 128 + (dd[p * 4] - rawMean) * 3.5));
+    dd[p * 4] = dd[p * 4 + 1] = dd[p * 4 + 2] = v;
+  }
+  dctx.putImageData(dimg, 0, 0);
+  const detail = new THREE.CanvasTexture(dc);
+  detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
+  detail.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  detailTexCache = detail;
+  return detail;
+}
+
+function makeTerrainMaterial(tex, f) {
+  const detail = ensureDetailTex();
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const mat = new THREE.MeshLambertMaterial({ map: tex });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.detailMap = { value: detail };
+    shader.uniforms.uMean = { value: 0.5 };
+    shader.uniforms.uDS = { value: f };
+    shader.fragmentShader = shader.fragmentShader
+      .replace('uniform vec3 diffuse;', 'uniform vec3 diffuse;\nuniform sampler2D detailMap;\nuniform float uMean;\nuniform float uDS;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float n1 = texture2D(detailMap, vMapUv * 2200.0 * uDS).r;
+        float n2 = texture2D(detailMap, vMapUv * 150.0 * uDS).r;
+        float n3 = texture2D(detailMap, vMapUv * 42.0 * uDS).r;
+        // 近距離のみディテールを効かせ、遠距離はフェードしてタイリングを隠す
+        float viewDist = length(vViewPosition);
+        float fade = clamp(1.0 - (viewDist - 700.0) / 2000.0, 0.0, 1.0);
+        float dtl = 1.0 + ((n1 * 0.4 + n2 * 0.35 + n3 * 0.25) - uMean) * 1.4 * fade;
+        diffuseColor.rgb *= clamp(dtl, 0.72, 1.28);`);
+  };
+  return mat;
+}
+
+function buildTerrain(tex) {
+  const step = isTouch ? Math.max(1, N / 512) : 1; // モバイルは512²まで間引き(高さサンプリングはフル解像度のまま)
+  const M = Math.floor((N - 1) / step) + 1;
+  const pos = new Float32Array(M * M * 3);
+  const uv = new Float32Array(M * M * 2);
+  for (let mj = 0; mj < M; mj++) {
+    const j = mj * step;
+    const z = (j / (N - 1) - 0.5) * W;
+    for (let mi = 0; mi < M; mi++) {
+      const i = mi * step;
+      const k = mj * M + mi;
+      pos[k * 3] = (i / (N - 1) - 0.5) * W;
+      pos[k * 3 + 1] = heights[j * N + i];
+      pos[k * 3 + 2] = z;
+      uv[k * 2] = i / (N - 1);
+      uv[k * 2 + 1] = 1 - j / (N - 1);
+    }
+  }
+  const idx = new Uint32Array((M - 1) * (M - 1) * 6);
+  let q = 0;
+  for (let j = 0; j < M - 1; j++) for (let i = 0; i < M - 1; i++) {
+    const a = j * M + i, b = a + 1, c = a + M, d = c + 1;
+    idx[q++] = a; idx[q++] = c; idx[q++] = b;
+    idx[q++] = b; idx[q++] = c; idx[q++] = d;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+
+  const mat = makeTerrainMaterial(tex, 1);
+
+  const mesh = new THREE.Mesh(geo, mat);
+  scene.add(mesh);
+}
+
+// ===== シームレス地形(実験的: チャンクストリーミング) =====
+const chunkStore = new Map(); // "z/x/y" -> { state, mesh, heights, farHeights }
+let chunkLoading = 0;
+const FAR_Z = ZOOM - 2;
+const NEAR_R = isTouch ? 1 : 2;
+const FAR_R = 2;
+let lastGround = 0;
+
+function tileLatLonC(z, x, y) {
+  const n = 2 ** z;
+  const lon = (x + 0.5) / n * 360 - 180;
+  const lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (y + 0.5) / n))) * 180 / Math.PI;
+  return { lat, lon };
+}
+const tileInJapan = (z, x, y) => {
+  const c = tileLatLonC(z, x, y);
+  return c.lat >= 24 && c.lat <= 46 && c.lon >= 122 && c.lon <= 147;
+};
+
+const demCache = new Map(); // DEMはチャンク破棄後も保持(境界縫合に使う)
+async function fetchDEMTile(z, x, y) {
+  const dkey = `${z}/${x}/${y}`;
+  if (demCache.has(dkey)) return demCache.get(dkey);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  let img = null, gsi = false;
+  // 経度方向は地球一周でラップ(日付変更線越え対応)
+  const nT = 2 ** z;
+  const xw = ((x % nT) + nT) % nT;
+  if (tileInJapan(z, xw, y)) {
+    try {
+      img = await loadImage(`https://cyberjapandata.gsi.go.jp/xyz/dem_png/${z}/${xw}/${y}.png`);
+      gsi = true;
+    } catch (e) { /* fallback */ }
+  }
+  if (!img) {
+    try {
+      img = await loadImage(`https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${xw}/${y}.png`);
+    } catch (e) {
+      const zero = new Float32Array(256 * 256); // 極地方の範囲外などは0m
+      demCache.set(dkey, zero);
+      return zero;
+    }
+  }
+  ctx.drawImage(img, 0, 0);
+  const d = ctx.getImageData(0, 0, 256, 256).data;
+  const h = new Float32Array(256 * 256);
+  for (let p = 0; p < 256 * 256; p++) {
+    const q = p * 4;
+    if (gsi) {
+      const v = d[q] * 65536 + d[q + 1] * 256 + d[q + 2];
+      h[p] = v === 8388608 ? 0 : v < 8388608 ? v * 0.01 : (v - 16777216) * 0.01;
+    } else {
+      h[p] = d[q] * 256 + d[q + 1] + d[q + 2] / 256 - 32768;
+    }
+    if (h[p] < terrainMinH) terrainMinH = h[p];
+  }
+  demCache.set(dkey, h);
+  if (demCache.size > 300) demCache.delete(demCache.keys().next().value);
+  return h;
+}
+
+async function fetchChunkTexture(z, x, y) {
+  const tz = z === ZOOM ? TEX_ZOOM : z + 1;
+  const m = 2 ** (tz - z);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256 * m;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#8a9aa8';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  const nTz = 2 ** tz;
+  const jobs = [];
+  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++) {
+    jobs.push(async () => {
+      try {
+        const txw = (((x * m + i) % nTz) + nTz) % nTz; // 経度ラップ
+        const img = await loadImage(`https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${tz}/${y * m + j}/${txw}`);
+        ctx.drawImage(img, i * 256, j * 256);
+      } catch (e) { /* 欠けはグレーのまま */ }
+    });
+  }
+  await pool(jobs, 8);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function buildChunkMesh(hArr, z, x, y, tex) {
+  const scaleToBase = 2 ** (ZOOM - z);
+  const isFar = z !== ZOOM;
+  const step = isFar ? 2 : (isTouch ? 2 : 1);
+  const M = Math.floor(255 / step) + 2; // +1: タイル右/下端(256px)まで延長して隣接チャンクとの隙間を塞ぐ
+  const total = M * M + 4 * M;
+  const pos = new Float32Array(total * 3);
+  const uv = new Float32Array(total * 2);
+  const px0 = x * 256 * scaleToBase - x0 * 256;
+  const py0 = y * 256 * scaleToBase - y0 * 256;
+  const toW = p => (p / (N - 1) - 0.5) * W;
+  const yOff = isFar ? -10 : 0;
+  // 隣接チャンクのDEMと境界標高を平均し、チャンク間の段差(地割れ)を消す
+  const nbL = demCache.get(`${z}/${x - 1}/${y}`);
+  const nbR = demCache.get(`${z}/${x + 1}/${y}`);
+  const nbU = demCache.get(`${z}/${x}/${y - 1}`);
+  const nbD = demCache.get(`${z}/${x}/${y + 1}`);
+  const hAt = (di, dj, wi, wj) => {
+    let v = hArr[dj * 256 + di];
+    if (wi === 0 && nbL) v = (v + nbL[dj * 256 + 255]) / 2;
+    else if (wi === 256 && nbR) v = (v + nbR[dj * 256]) / 2;
+    if (wj === 0 && nbU) v = (v + nbU[255 * 256 + di]) / 2;
+    else if (wj === 256 && nbD) v = (v + nbD[di]) / 2;
+    return v;
+  };
+  for (let mj = 0; mj < M; mj++) {
+    const wj = Math.min(256, mj * step); // ワールド位置(ピクセル)
+    const dj = Math.min(255, mj * step); // データ参照
+    for (let mi = 0; mi < M; mi++) {
+      const wi = Math.min(256, mi * step);
+      const di = Math.min(255, mi * step);
+      const k = mj * M + mi;
+      pos[k * 3] = toW(px0 + wi * scaleToBase);
+      pos[k * 3 + 1] = hAt(di, dj, wi, wj) + yOff;
+      pos[k * 3 + 2] = toW(py0 + wj * scaleToBase);
+      uv[k * 2] = wi / 256;
+      uv[k * 2 + 1] = 1 - wj / 256;
+    }
+  }
+  const idx = new Uint32Array(((M - 1) * (M - 1) + 4 * (M - 1)) * 6);
+  let q = 0;
+  for (let j = 0; j < M - 1; j++) for (let i = 0; i < M - 1; i++) {
+    const a = j * M + i, b = a + 1, c = a + M, d = c + 1;
+    idx[q++] = a; idx[q++] = c; idx[q++] = b;
+    idx[q++] = b; idx[q++] = c; idx[q++] = d;
+  }
+  // スカート(チャンク境界の隙間隠し)
+  const drop = isFar ? 160 : 60;
+  const edges = [t => t, t => (M - 1) * M + t, t => t * M, t => t * M + (M - 1)];
+  let vtx = M * M;
+  for (const edge of edges) {
+    const base = vtx;
+    for (let t = 0; t < M; t++) {
+      const src = edge(t);
+      pos[vtx * 3] = pos[src * 3];
+      pos[vtx * 3 + 1] = pos[src * 3 + 1] - drop;
+      pos[vtx * 3 + 2] = pos[src * 3 + 2];
+      uv[vtx * 2] = uv[src * 2];
+      uv[vtx * 2 + 1] = uv[src * 2 + 1];
+      vtx++;
+    }
+    for (let t = 0; t < M - 1; t++) {
+      const a = edge(t), b = edge(t + 1), c = base + t, d = base + t + 1;
+      idx[q++] = a; idx[q++] = b; idx[q++] = c;
+      idx[q++] = b; idx[q++] = d; idx[q++] = c;
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  // スカートの法線を地表の縁と揃え、暗い壁として目立たないようにする
+  const nrm = geo.attributes.normal;
+  let sv = M * M;
+  for (const edge of edges) {
+    for (let t = 0; t < M; t++) {
+      const src = edge(t);
+      nrm.setXYZ(sv, nrm.getX(src), nrm.getY(src), nrm.getZ(src));
+      sv++;
+    }
+  }
+  const mat = makeTerrainMaterial(tex, scaleToBase / GRID);
+  mat.side = THREE.DoubleSide;
+  return new THREE.Mesh(geo, mat);
+}
+
+async function loadChunk(z, x, y) {
+  const key = `${z}/${x}/${y}`;
+  if (chunkStore.has(key)) return;
+  chunkStore.set(key, { state: 'loading' });
+  try {
+    const [h, tex] = await Promise.all([fetchDEMTile(z, x, y), fetchChunkTexture(z, x, y)]);
+    const rec = chunkStore.get(key);
+    if (!rec || rec.state !== 'loading') { tex.dispose(); return; }
+    const mesh = buildChunkMesh(h, z, x, y, tex);
+    scene.add(mesh);
+    Object.assign(rec, { state: 'ok', mesh, heights: z === ZOOM ? h : null, farHeights: z !== ZOOM ? h : null });
+  } catch (e) {
+    chunkStore.delete(key);
+  }
+}
+
+function disposeChunk(key) {
+  const rec = chunkStore.get(key);
+  if (!rec) return;
+  if (rec.mesh) {
+    scene.remove(rec.mesh);
+    rec.mesh.geometry.dispose();
+    if (rec.mesh.material.map) rec.mesh.material.map.dispose();
+    rec.mesh.material.dispose();
+  }
+  rec.state = 'dead';
+  chunkStore.delete(key);
+}
+
+function cameraTile(z) {
+  const px = (camera.position.x / W + 0.5) * (N - 1) + x0 * 256;
+  const py = (camera.position.z / W + 0.5) * (N - 1) + y0 * 256;
+  const s = 256 * 2 ** (ZOOM - z);
+  return { x: Math.floor(px / s), y: Math.floor(py / s) };
+}
+
+function seamlessUpdate() {
+  const need = [];
+  const cn = cameraTile(ZOOM);
+  for (let dy = -NEAR_R; dy <= NEAR_R; dy++) for (let dx = -NEAR_R; dx <= NEAR_R; dx++)
+    need.push({ key: `${ZOOM}/${cn.x + dx}/${cn.y + dy}`, d: Math.max(Math.abs(dx), Math.abs(dy)) });
+  const cf = cameraTile(FAR_Z);
+  for (let dy = -FAR_R; dy <= FAR_R; dy++) for (let dx = -FAR_R; dx <= FAR_R; dx++)
+    need.push({ key: `${FAR_Z}/${cf.x + dx}/${cf.y + dy}`, d: Math.max(Math.abs(dx), Math.abs(dy)) + 0.5 });
+  const needSet = new Set(need.map(n => n.key));
+  for (const key of [...chunkStore.keys()]) {
+    if (needSet.has(key)) continue;
+    const [z, x, y] = key.split('/').map(Number);
+    const c = z === ZOOM ? cn : cf;
+    const r = (z === ZOOM ? NEAR_R : FAR_R) + 1;
+    if (Math.abs(x - c.x) > r || Math.abs(y - c.y) > r) disposeChunk(key);
+  }
+  // 近いチャンク優先で読み込み(足元の穴を最速で塞ぐ)
+  need.sort((a, b) => a.d - b.d);
+  for (const { key } of need) {
+    if (chunkStore.has(key)) continue;
+    // 標高は軽いので先読みしておく(境界縫合の成功率を上げる)
+    const [z, x, y] = key.split('/').map(Number);
+    if (!demCache.has(key)) fetchDEMTile(z, x, y);
+    if (chunkLoading >= 3) continue;
+    chunkLoading++;
+    loadChunk(z, x, y).finally(() => { chunkLoading--; });
+  }
+}
+
+function sampleHeightSeamless(wx, wz) {
+  const px = (wx / W + 0.5) * (N - 1) + x0 * 256;
+  const py = (wz / W + 0.5) * (N - 1) + y0 * 256;
+  const tryZoom = (z) => {
+    const span = 2 ** (ZOOM - z);
+    const tx = Math.floor(px / (256 * span)), ty = Math.floor(py / (256 * span));
+    const rec = chunkStore.get(`${z}/${tx}/${ty}`);
+    const arr = rec && (rec.heights || rec.farHeights);
+    if (!arr) return null;
+    let fi = px / span - tx * 256, fj = py / span - ty * 256;
+    fi = Math.min(254.999, Math.max(0, fi));
+    fj = Math.min(254.999, Math.max(0, fj));
+    const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, v = fj - j;
+    return (arr[j * 256 + i] * (1 - u) + arr[j * 256 + i + 1] * u) * (1 - v)
+         + (arr[(j + 1) * 256 + i] * (1 - u) + arr[(j + 1) * 256 + i + 1] * u) * v;
+  };
+  const h = tryZoom(ZOOM) ?? tryZoom(FAR_Z);
+  if (h !== null && h !== undefined) { lastGround = h; return h; }
+  return lastGround;
+}
+
+// ===== 山名ラベル =====
+function makeLabel(text) {
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  const font = '600 44px "Hiragino Sans", sans-serif';
+  ctx.font = font;
+  const w = Math.ceil(ctx.measureText(text).width) + 40;
+  cv.width = w; cv.height = 76;
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(8,16,32,0.55)';
+  ctx.beginPath(); ctx.roundRect(0, 8, w, 60, 12); ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 6;
+  ctx.fillText(text, 20, 40);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sp.userData.aspect = w / 76;
+  sp.renderOrder = 999;
+  return sp;
+}
+const labels = [];
+const peakMarks = [];
+function addPeakLabels() {
+  for (const p of PEAKS) {
+    const { x, z } = lonLatToWorld(p.lon, p.lat);
+    if (Math.abs(x) > W / 2 * 0.98 || Math.abs(z) > W / 2 * 0.98) continue;
+    const sp = makeLabel(p.name);
+    sp.position.set(x, sampleHeight(x, z) + 250, z);
+    scene.add(sp);
+    labels.push(sp);
+    peakMarks.push({ name: p.name.replace(/ [\d,]+m$/, ''), x, z });
+  }
+}
+
+// ===== 全体マップ / ミニマップ =====
+const minimapEl = document.getElementById('minimap');
+const mmCtx = minimapEl.getContext('2d');
+const bigmapWrap = document.getElementById('bigmapWrap');
+const bigmapEl = document.getElementById('bigmap');
+const bmCtx = bigmapEl.getContext('2d');
+let mapSource = null;   // 衛星写真キャンバス(テクスチャと共用)
+let mapOpen = false;
+let mapPause = false;   // 地図操作のためにポインタロックを一時解除中
+
+function drawPlayerArrow(ctx, x, y, ang, s) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  // 視野コーン
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, s * 3.2, -Math.PI / 2 - 0.55, -Math.PI / 2 + 0.55);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255, 235, 130, 0.30)';
+  ctx.fill();
+  // 矢印
+  ctx.beginPath();
+  ctx.moveTo(0, -s);
+  ctx.lineTo(s * 0.62, s * 0.8);
+  ctx.lineTo(0, s * 0.34);
+  ctx.lineTo(-s * 0.62, s * 0.8);
+  ctx.closePath();
+  ctx.fillStyle = '#ffd54a';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.lineWidth = s * 0.18;
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// 全体マップのビュー(ズーム・パン)状態
+const mapView = { x: 0.5, y: 0.5, k: 1 };
+function clampMapView() {
+  mapView.k = Math.max(1, Math.min(12, mapView.k));
+  const h = 0.5 / mapView.k;
+  mapView.x = Math.max(h, Math.min(1 - h, mapView.x));
+  mapView.y = Math.max(h, Math.min(1 - h, mapView.y));
+}
+
+function drawMap(ctx, size, withNames) {
+  if (!mapSource) return;
+  const k = withNames ? mapView.k : 1;
+  const vx = withNames ? mapView.x : 0.5;
+  const vy = withNames ? mapView.y : 0.5;
+  const img = routesVisible && mapWithRoutes ? mapWithRoutes : mapSource;
+  const toS = (u, v) => [(0.5 + (u - vx) * k) * size, (0.5 + (v - vy) * k) * size];
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img,
+    (vx - 0.5 / k) * img.width, (vy - 0.5 / k) * img.height, img.width / k, img.height / k,
+    0, 0, size, size);
+
+  const fs = withNames ? 26 : 20;
+  ctx.textAlign = 'center';
+
+  // 周辺スポット(全体マップのみ)
+  if (withNames && pois.length) {
+    const colors = { peak: '#ff8a65', pass: '#ffd54f', hut: '#4dd0e1', view: '#aed581', place: '#e8e8e8' };
+    for (const o of pois) {
+      const [mx, my] = toS(o.u, o.v);
+      if (mx < -20 || mx > size + 20 || my < -20 || my > size + 20) continue;
+      ctx.beginPath();
+      ctx.arc(mx, my, 5, 0, Math.PI * 2);
+      ctx.fillStyle = colors[o.type] || '#fff';
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.fill();
+      ctx.stroke();
+      if (k >= 2.5) {
+        ctx.font = '600 19px "Hiragino Sans", sans-serif';
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.75)';
+        ctx.strokeText(o.name, mx, my - 10);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(o.name, mx, my - 10);
+      }
+    }
+  }
+
+  // GPXトラック(水色)
+  if (gpxTrack) {
+    ctx.lineJoin = ctx.lineCap = 'round';
+    for (const [lw, col] of [[withNames ? 7 : 5, 'rgba(0, 40, 60, 0.6)'], [withNames ? 3.5 : 2.5, '#18e0ff']]) {
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = col;
+      ctx.beginPath();
+      let pen = false;
+      for (const pt of gpxTrack.mapPoly) {
+        if (!pt) { pen = false; continue; }
+        const [mx, my] = toS(pt[0], pt[1]);
+        if (pen) ctx.lineTo(mx, my); else { ctx.moveTo(mx, my); pen = true; }
+      }
+      ctx.stroke();
+    }
+  }
+
+  // 山頂マーカー
+  for (const pk of peakMarks) {
+    const [mx, my] = toS(pk.x / W + 0.5, pk.z / W + 0.5);
+    const r = withNames ? 10 : 8;
+    ctx.beginPath();
+    ctx.moveTo(mx, my - r);
+    ctx.lineTo(mx + r * 0.9, my + r * 0.7);
+    ctx.lineTo(mx - r * 0.9, my + r * 0.7);
+    ctx.closePath();
+    ctx.fillStyle = '#ff5252';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.fill();
+    ctx.stroke();
+    if (withNames) {
+      ctx.font = `600 ${fs}px "Hiragino Sans", sans-serif`;
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.strokeText(pk.name, mx, my - r - 8);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(pk.name, mx, my - r - 8);
+    }
+  }
+  // プレイヤー(現在地 + 視線方向)
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const ang = Math.atan2(dir.x, -dir.z);
+  const [px, py] = toS(camera.position.x / W + 0.5, camera.position.z / W + 0.5);
+  drawPlayerArrow(ctx, px, py, ang, withNames ? 20 : 15);
+  // 方位(N)
+  ctx.font = `700 ${fs + 4}px "Hiragino Sans", sans-serif`;
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+  ctx.strokeText('N', size / 2, fs + 14);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('N', size / 2, fs + 14);
+  // スケールバー(ズームに応じて長さを選択)
+  if (withNames) {
+    const m = [50000, 20000, 10000, 5000, 2000, 1000, 500, 200].find(mm => size * mm / W * k <= size * 0.35) || 200;
+    const bar = size * m / W * k;
+    const bx = size - bar - 40, by = size - 36;
+    const label = m >= 1000 ? (m / 1000) + 'km' : m + 'm';
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + bar, by); ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx + bar, by); ctx.stroke();
+    ctx.font = '600 22px "Hiragino Sans", sans-serif';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.strokeText(label, bx + bar / 2, by - 12);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, bx + bar / 2, by - 12);
+  }
+}
+
+function toggleBigMap(open) {
+  mapOpen = open ?? !mapOpen;
+  bigmapWrap.style.display = mapOpen ? 'flex' : 'none';
+  if (!mapOpen && mapPause) {
+    // 地図を閉じたら歩行モード(ポインタロック)に自動復帰
+    mapPause = false;
+    if (!isTouch) controls.lock();
+  }
+}
+bigmapWrap.addEventListener('click', () => toggleBigMap(false));
+bigmapEl.addEventListener('click', e => e.stopPropagation()); // マップ本体のクリック(パン操作)では閉じない
+bigmapEl.style.touchAction = 'none';
+
+// ホイールでカーソル位置を中心にズーム
+bigmapEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = bigmapEl.getBoundingClientRect();
+  const mx = (e.clientX - r.left) / r.width;
+  const my = (e.clientY - r.top) / r.height;
+  const u = mapView.x + (mx - 0.5) / mapView.k;
+  const v = mapView.y + (my - 0.5) / mapView.k;
+  mapView.k = Math.max(1, Math.min(12, mapView.k * (e.deltaY < 0 ? 1.25 : 0.8)));
+  mapView.x = u - (mx - 0.5) / mapView.k;
+  mapView.y = v - (my - 0.5) / mapView.k;
+  clampMapView();
+}, { passive: false });
+
+// ドラッグでパン、2本指でピンチズーム
+const mapPointers = new Map();
+let pinchBase = null;
+bigmapEl.addEventListener('pointerdown', e => {
+  bigmapEl.setPointerCapture(e.pointerId);
+  mapPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  pinchBase = null;
+});
+bigmapEl.addEventListener('pointermove', e => {
+  if (!mapPointers.has(e.pointerId)) return;
+  const r = bigmapEl.getBoundingClientRect();
+  if (mapPointers.size === 1) {
+    const p = mapPointers.get(e.pointerId);
+    mapView.x -= (e.clientX - p.x) / r.width / mapView.k;
+    mapView.y -= (e.clientY - p.y) / r.height / mapView.k;
+    clampMapView();
+  }
+  mapPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (mapPointers.size === 2) {
+    const [a, b] = [...mapPointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchBase) {
+      mapView.k = Math.max(1, Math.min(12, mapView.k * dist / pinchBase));
+      clampMapView();
+    }
+    pinchBase = dist;
+  }
+});
+const mapPointerUp = e => { mapPointers.delete(e.pointerId); pinchBase = null; };
+bigmapEl.addEventListener('pointerup', mapPointerUp);
+bigmapEl.addEventListener('pointercancel', mapPointerUp);
+
+// ズームボタン(＋/−/全体表示) + ダブルクリックズーム
+function mapZoomAt(factor, mx = 0.5, my = 0.5) {
+  const u = mapView.x + (mx - 0.5) / mapView.k;
+  const v = mapView.y + (my - 0.5) / mapView.k;
+  mapView.k = Math.max(1, Math.min(12, mapView.k * factor));
+  mapView.x = u - (mx - 0.5) / mapView.k;
+  mapView.y = v - (my - 0.5) / mapView.k;
+  clampMapView();
+}
+document.getElementById('zoomIn').addEventListener('click', e => { e.stopPropagation(); mapZoomAt(1.6); });
+document.getElementById('zoomOut').addEventListener('click', e => { e.stopPropagation(); mapZoomAt(1 / 1.6); });
+document.getElementById('zoomReset').addEventListener('click', e => {
+  e.stopPropagation();
+  mapView.k = 1; mapView.x = mapView.y = 0.5;
+});
+bigmapEl.addEventListener('dblclick', e => {
+  const r = bigmapEl.getBoundingClientRect();
+  mapZoomAt(1.6, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+});
+
+// ===== 登山ルート(OSM 主要ルート: ルートリレーション + 名前付き登山道) =====
+let routesVisible = true;
+let routesObj = null;
+let routeLineMat = null;
+let routeCount = 0;
+let routeStatus = 'loading'; // loading | ok | none | error
+const routePolysMap = [];    // マップ描画用(正規化座標のポリライン)
+let mapWithRoutes = null;    // ルートを焼き込んだマップ画像
+
+const BOUNDS = (() => {
+  const lon = tx => tx / 2 ** ZOOM * 360 - 180;
+  const lat = ty => Math.atan(Math.sinh(Math.PI * (1 - 2 * ty / 2 ** ZOOM))) * 180 / Math.PI;
+  return { s: lat(y0 + GRID), w: lon(x0), n: lat(y0), e: lon(x0 + GRID) };
+})();
+
+async function fetchRoutesOSM() {
+  const cacheKey = `routes_v1_${areaKey}`;
+  try {
+    const c = localStorage.getItem(cacheKey);
+    if (c) return JSON.parse(c);
+  } catch (e) { /* キャッシュ破損は無視 */ }
+  const bbox = `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
+  const q = `[out:json][timeout:60];(relation["route"~"^(hiking|foot|pilgrimage)$"](${bbox});way["highway"~"^(path|footway|track|steps)$"]["name"](${bbox}););out geom;`;
+  const servers = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+  let data = null;
+  for (const url of servers) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q),
+      });
+      if (!res.ok) continue;
+      data = await res.json();
+      break;
+    } catch (e) { /* 次のサーバーへ */ }
+  }
+  if (!data) return null;
+  const seen = new Set();
+  const polys = [];
+  const addWay = (id, geom) => {
+    if (!geom || geom.length < 2 || seen.has(id)) return;
+    seen.add(id);
+    polys.push(geom.map(g => [+g.lat.toFixed(5), +g.lon.toFixed(5)]));
+  };
+  for (const el of data.elements || []) {
+    if (el.type === 'way') addWay(el.id, el.geometry);
+    else if (el.type === 'relation') {
+      for (const m of el.members || []) if (m.type === 'way') addWay(m.ref, m.geometry);
+    }
+  }
+  const out = polys.slice(0, 1500);
+  try { localStorage.setItem(cacheKey, JSON.stringify(out)); } catch (e) { /* 容量超過は無視 */ }
+  return out;
+}
+
+// ルート線の距離フェード: 至近(ニアプレーンのスパイク防止)と遠距離(ノコギリ状のちらつき防止)を消す
+function patchLineNearFar(mat, near, farStart, farEnd) {
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace('void main() {',
+      `varying float vCamDist;
+void main() {
+	vCamDist = -( modelViewMatrix * vec4( ( instanceStart + instanceEnd ) * 0.5, 1.0 ) ).z;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', `varying float vCamDist;
+void main() {
+	if ( vCamDist < ${near.toFixed(1)} ) discard;`)
+      .replace('gl_FragColor = vec4( diffuseColor.rgb, alpha );',
+        `gl_FragColor = vec4( diffuseColor.rgb, alpha * ( 1.0 - smoothstep( ${farStart.toFixed(1)}, ${farEnd.toFixed(1)}, vCamDist ) ) );`);
+  };
+}
+
+function buildRoutes(polys) {
+  const segs = [];
+  for (const poly of polys) {
+    const mapPoly = [];
+    let prev = null;
+    for (const [lat, lon] of poly) {
+      const { x, z } = lonLatToWorld(lon, lat);
+      if (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995) {
+        mapPoly.push(null);
+        prev = null;
+        continue;
+      }
+      mapPoly.push([x / W + 0.5, z / W + 0.5]);
+      const cur = { x, y: sampleHeight(x, z) + 5, z };
+      if (prev) {
+        // 長い区間は分割して地形に沿わせる
+        const d = Math.hypot(x - prev.x, z - prev.z);
+        const steps = Math.min(60, Math.max(1, Math.ceil(d / 30)));
+        let last = prev;
+        for (let s = 1; s <= steps; s++) {
+          const cx = prev.x + (x - prev.x) * s / steps;
+          const cz = prev.z + (z - prev.z) * s / steps;
+          const p = s === steps ? cur : { x: cx, y: sampleHeight(cx, cz) + 5, z: cz };
+          segs.push(last.x, last.y, last.z, p.x, p.y, p.z);
+          last = p;
+        }
+      }
+      prev = cur;
+    }
+    if (mapPoly.some(Boolean)) routePolysMap.push(mapPoly);
+  }
+  if (!segs.length) return 0;
+  const geo = new LineSegmentsGeometry();
+  geo.setPositions(segs);
+  routeLineMat = new LineMaterial({ color: 0xff7c2a, linewidth: 3, transparent: true, opacity: 0.95 });
+  routeLineMat.resolution.set(innerWidth, innerHeight);
+  patchLineNearFar(routeLineMat, 12, 3500, 6000);
+  routesObj = new LineSegments2(geo, routeLineMat);
+  routesObj.visible = routesVisible;
+  scene.add(routesObj);
+  return routePolysMap.length;
+}
+
+function bakeRouteMap() {
+  if (!mapSource || !routePolysMap.length) return;
+  const c = document.createElement('canvas');
+  c.width = c.height = 2048; // ズームに耐える解像度でベイク
+  const ctx = c.getContext('2d');
+  ctx.drawImage(mapSource, 0, 0, 2048, 2048);
+  ctx.lineJoin = ctx.lineCap = 'round';
+  for (const [lw, col] of [[9, 'rgba(20, 10, 0, 0.5)'], [4.6, '#ff7c2a']]) {
+    ctx.lineWidth = lw;
+    ctx.strokeStyle = col;
+    ctx.beginPath();
+    for (const poly of routePolysMap) {
+      let pen = false;
+      for (const pt of poly) {
+        if (!pt) { pen = false; continue; }
+        if (pen) ctx.lineTo(pt[0] * 2048, pt[1] * 2048);
+        else { ctx.moveTo(pt[0] * 2048, pt[1] * 2048); pen = true; }
+      }
+    }
+    ctx.stroke();
+  }
+  mapWithRoutes = c;
+}
+
+function loadRoutes() {
+  return fetchRoutesOSM().then(polys => {
+    if (polys === null) { routeStatus = 'error'; return; }
+    routeCount = buildRoutes(polys);
+    if (!routeCount) { routeStatus = 'none'; return; }
+    bakeRouteMap();
+    routeStatus = 'ok';
+    console.log('登山ルート読み込み:', routeCount, '本');
+  }).catch(e => { routeStatus = 'error'; console.warn('ルート取得失敗', e); });
+}
+
+// ===== 周辺スポット(OSM: 山頂・峠・山小屋・展望地・集落) =====
+let pois = [];
+const spotsEl = document.getElementById('spots');
+// 分割されたouterリングを端点でつなぎ合わせる(湖のマルチポリゴン用)
+const samePt = (a, b) => Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+function stitchRings(ways) {
+  const segs = ways.map(g => g.slice());
+  const rings = [];
+  while (segs.length) {
+    let ring = segs.shift();
+    let guard = segs.length + 2;
+    while (guard-- > 0) {
+      if (ring.length > 3 && samePt(ring[ring.length - 1], ring[0])) break; // 閉じた
+      const end = ring[ring.length - 1];
+      let found = -1, rev = false;
+      for (let i = 0; i < segs.length; i++) {
+        if (samePt(end, segs[i][0])) { found = i; break; }
+        if (samePt(end, segs[i][segs[i].length - 1])) { found = i; rev = true; break; }
+      }
+      if (found < 0) break;
+      const s = segs.splice(found, 1)[0];
+      if (rev) s.reverse();
+      ring = ring.concat(s.slice(1));
+    }
+    if (ring.length > 3) rings.push(ring);
+  }
+  return rings;
+}
+
+async function fetchPOIs() {
+  const cacheKey = `pois_v4_${areaKey}`;
+  try {
+    const c = localStorage.getItem(cacheKey);
+    if (c) return JSON.parse(c);
+  } catch (e) { /* 無視 */ }
+  const bbox = `${BOUNDS.s},${BOUNDS.w},${BOUNDS.n},${BOUNDS.e}`;
+  const q = `[out:json][timeout:60];(node["natural"~"^(peak|volcano)$"]["name"](${bbox});node["natural"="saddle"]["name"](${bbox});node["mountain_pass"="yes"]["name"](${bbox});node["tourism"~"^(alpine_hut|wilderness_hut|viewpoint)$"](${bbox});node["place"~"^(town|village|hamlet)$"]["name"](${bbox}););out body 600;(relation["natural"="water"](${bbox}););out geom 80;(way["natural"="water"](${bbox});way["water"~"^(lake|reservoir|lagoon)$"](${bbox}););out geom 250;`;
+  const servers = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+  ];
+  let data = null;
+  for (const url of servers) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'data=' + encodeURIComponent(q),
+      });
+      if (!res.ok) continue;
+      data = await res.json();
+      break;
+    } catch (e) { /* 次へ */ }
+  }
+  if (!data) return null;
+  const out = [];
+  const water = [];
+  for (const el of data.elements || []) {
+    if (el.type === 'way' && el.geometry) {
+      // 水域ポリゴン(点数を最大300に間引き)
+      const g = el.geometry;
+      const st = Math.max(1, Math.ceil(g.length / 300));
+      water.push(g.filter((_, i) => i % st === 0).map(p => [+p.lat.toFixed(5), +p.lon.toFixed(5)]));
+      continue;
+    }
+    if (el.type === 'relation' && el.members) {
+      // 湖のマルチポリゴン: outerリングを連結して1つの外周に
+      const outers = el.members.filter(m => m.type === 'way' && m.role !== 'inner' && m.geometry).map(m => m.geometry);
+      for (const ring of stitchRings(outers)) {
+        const st = Math.max(1, Math.ceil(ring.length / 300));
+        water.push(ring.filter((_, i) => i % st === 0).map(p => [+p.lat.toFixed(5), +p.lon.toFixed(5)]));
+      }
+      continue;
+    }
+    if (el.type !== 'node') continue;
+    const t = el.tags || {};
+    let type, name = t['name:ja'] || t.name || '';
+    if (t.natural === 'peak' || t.natural === 'volcano') {
+      type = 'peak';
+      const ele = parseInt(t.ele);
+      if (name && Number.isFinite(ele)) name += ` ${ele.toLocaleString()}m`;
+    } else if (t.natural === 'saddle' || t.mountain_pass === 'yes') type = 'pass';
+    else if (t.tourism === 'alpine_hut' || t.tourism === 'wilderness_hut') { type = 'hut'; name = name || '山小屋'; }
+    else if (t.tourism === 'viewpoint') { type = 'view'; name = name || '展望地'; }
+    else if (t.place) type = 'place';
+    if (!name || !type) continue;
+    out.push({ name, type, lat: el.lat, lon: el.lon });
+  }
+  const result = { pois: out, water };
+  try { localStorage.setItem(cacheKey, JSON.stringify(result)); } catch (e) { /* 無視 */ }
+  return result;
+}
+
+function loadPOIs() {
+  fetchPOIs().then(data => {
+    if (!data) return;
+    pois = [];
+    for (const o of data.pois || []) {
+      const { x, z } = lonLatToWorld(o.lon, o.lat);
+      if (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995) continue;
+      pois.push({ ...o, x, z, u: x / W + 0.5, v: z / W + 0.5 });
+    }
+    console.log('周辺スポット読み込み:', pois.length, '件');
+    buildWater(data.water);
+  }).catch(e => console.warn('スポット取得失敗', e));
+}
+
+const SPOT_ICON = { peak: '⛰', pass: '🚩', hut: '🛖', view: '👀', place: '🏘' };
+function updateSpots() {
+  if (!pois.length) { spotsEl.style.display = 'none'; return; }
+  const p = camera.position;
+  const near = pois
+    .map(o => ({ o, d: Math.hypot(o.x - p.x, o.z - p.z) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, isTouch ? 4 : 6);
+  const lines = ['📍 近くのスポット'];
+  for (const { o, d } of near) {
+    const deg = Math.atan2(o.x - p.x, -(o.z - p.z)) * 180 / Math.PI;
+    const dir = DIRS[Math.round(((deg + 360) % 360) / 45) % 8];
+    const dist = d < 1000 ? `${d.toFixed(0)}m` : `${(d / 1000).toFixed(1)}km`;
+    lines.push(`${SPOT_ICON[o.type] || '・'} ${o.name}  ${dist} ${dir}`);
+  }
+  spotsEl.textContent = lines.join('\n');
+  spotsEl.style.display = 'block';
+}
+
+// ===== 水面(湖・海: 空の反射+太陽のきらめき+波紋のシェーダ) =====
+let waterMat = null;
+let seaMesh = null;
+let waterCount = 0;
+
+function ensureWaterMaterial() {
+  if (waterMat) return waterMat;
+  const wc = document.createElement('canvas');
+  wc.width = wc.height = 256;
+  const wctx = wc.getContext('2d');
+  const im = wctx.createImageData(256, 256);
+  for (let i = 0; i < 256 * 256; i++) {
+    const v = Math.random() * 255;
+    im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v;
+    im.data[i * 4 + 3] = 255;
+  }
+  wctx.putImageData(im, 0, 0);
+  wctx.filter = 'blur(2px)';
+  wctx.drawImage(wc, 0, 0);
+  const tex = new THREE.CanvasTexture(wc);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+
+  waterMat = new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, {
+      uTime: { value: 0 },
+      uNoise: { value: null },
+      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
+      uSunCol: { value: new THREE.Color(1, 1, 1) },
+      uSky: { value: new THREE.Color(0x9dc4ea) },
+      uHorizon: { value: new THREE.Color(0xdfeaf5) },
+      uDeep: { value: new THREE.Color(0x11303f) },
+    }]),
+    vertexShader: `
+      varying vec3 vWorld;
+      #include <fog_pars_vertex>
+      void main() {
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorld = wp.xyz;
+        vec4 mvPosition = viewMatrix * wp;
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
+      }`,
+    fragmentShader: `
+      uniform float uTime;
+      uniform sampler2D uNoise;
+      uniform vec3 uSunDir, uSunCol, uSky, uHorizon, uDeep;
+      varying vec3 vWorld;
+      #include <fog_pars_fragment>
+      void main() {
+        vec2 uv = vWorld.xz * 0.02;
+        float h1 = texture2D(uNoise, uv + vec2(uTime * 0.014, uTime * 0.010)).r;
+        float h2 = texture2D(uNoise, uv * 2.7 - vec2(uTime * 0.022, -uTime * 0.016)).r;
+        float h = h1 * 0.6 + h2 * 0.4;
+        vec3 n = normalize(vec3(dFdx(h) * -14.0, 1.0, dFdy(h) * -14.0));
+        vec3 V = normalize(cameraPosition - vWorld);
+        float fres = 0.10 + 0.90 * pow(1.0 - max(dot(V, n), 0.0), 3.0);
+        vec3 R = reflect(-V, n);
+        vec3 skyRef = mix(uHorizon, uSky, pow(clamp(R.y, 0.0, 1.0), 0.55));
+        float spec = pow(max(dot(R, uSunDir), 0.0), 240.0);
+        vec3 col = mix(uDeep, skyRef, fres) + uSunCol * spec * 1.7;
+        gl_FragColor = vec4(col, 1.0);
+        #include <fog_fragment>
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }`,
+    fog: true,
+  });
+  waterMat.uniforms.uNoise.value = tex;
+  return waterMat;
+}
+
+function buildWater(waterPolys) {
+  const mat = ensureWaterMaterial();
+  // 海(標高0m以下の領域がある場合のみ)
+  if (terrainMinH < 0.5 && !seaMesh) {
+    seaMesh = new THREE.Mesh(new THREE.PlaneGeometry(W * 1.5, W * 1.5).rotateX(-Math.PI / 2), mat);
+    seaMesh.position.y = 0.35;
+    scene.add(seaMesh);
+    waterCount++;
+  }
+  if (!waterPolys) return;
+  for (const poly of waterPolys) {
+    if (waterCount >= 200) break;
+    const pts = [];
+    for (const [lat, lon] of poly) {
+      const { x, z } = lonLatToWorld(lon, lat);
+      if (Math.abs(x) < W / 2 * 0.995 && Math.abs(z) < W / 2 * 0.995) pts.push({ x, z });
+    }
+    if (pts.length < 4) continue;
+    let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    }
+    if (maxX - minX < 120 && maxZ - minZ < 120) continue; // 小さな池は省略
+    // 水面の高さ: 外周の地形標高の下位15%点 + 0.4m
+    const hs = pts.map(p => sampleHeight(p.x, p.z)).sort((a, b) => a - b);
+    const level = hs[Math.floor(hs.length * 0.15)] + 0.4;
+    if (level < 1) continue; // 海面領域は海プレーンに任せる
+    const shape = new THREE.Shape(pts.map(p => new THREE.Vector2(p.x, -p.z)));
+    const geo = new THREE.ShapeGeometry(shape);
+    geo.rotateX(-Math.PI / 2);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.y = level;
+    scene.add(mesh);
+    waterCount++;
+  }
+  if (waterCount) {
+    applyEnvironment(); // 水面の色を現在の時間帯・天気に同期
+    console.log('水面:', waterCount, '面');
+  }
+}
+
+// ===== GPXトラック表示・再生 =====
+let gpxTrack = null;   // { name, world:[{x,y,z,dist}], mapPoly, totalDist }
+let gpxPlaying = false;
+let gpxDist = 0;
+let gpxIdx = 1;
+let gpxLineMat = null;
+
+function loadGPXTrack() {
+  if (!QS.has('gpx')) return;
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem('gpx_track')); } catch (e) { /* 破損 */ }
+  if (!data || !Array.isArray(data.points) || data.points.length < 2) return;
+  const world = [], mapPoly = [], segs = [];
+  let dist = 0, prev = null;
+  for (const [lat, lon] of data.points) {
+    const { x, z } = lonLatToWorld(lon, lat);
+    if (Math.abs(x) > W / 2 * 0.995 || Math.abs(z) > W / 2 * 0.995) { prev = null; mapPoly.push(null); continue; }
+    mapPoly.push([x / W + 0.5, z / W + 0.5]);
+    const cur = { x, y: sampleHeight(x, z) + 4, z };
+    if (prev) {
+      const d = Math.hypot(x - prev.x, z - prev.z);
+      const steps = Math.min(60, Math.max(1, Math.ceil(d / 25)));
+      let last = prev;
+      for (let s = 1; s <= steps; s++) {
+        const cx = prev.x + (x - prev.x) * s / steps;
+        const cz = prev.z + (z - prev.z) * s / steps;
+        const p2 = s === steps ? cur : { x: cx, y: sampleHeight(cx, cz) + 4, z: cz };
+        segs.push(last.x, last.y, last.z, p2.x, p2.y, p2.z);
+        last = p2;
+      }
+      dist += d;
+    }
+    world.push({ ...cur, dist });
+    prev = cur;
+  }
+  if (world.length < 2) return;
+  const geo = new LineSegmentsGeometry();
+  geo.setPositions(segs);
+  gpxLineMat = new LineMaterial({ color: 0x18e0ff, linewidth: 4.5, transparent: true, opacity: 0.98 });
+  gpxLineMat.resolution.set(innerWidth, innerHeight);
+  patchLineNearFar(gpxLineMat, 10, 6000, 10000);
+  scene.add(new LineSegments2(geo, gpxLineMat));
+  gpxTrack = { name: data.name, world, mapPoly, totalDist: dist };
+  // 開始位置はトラック起点の少し横(線の真下に立つと描画スパイクが出るため)
+  const s0 = world[0];
+  const off = gpxOffset(0);
+  camera.position.set(s0.x + off.x, sampleHeight(s0.x + off.x, s0.z + off.z) + EYE, s0.z + off.z);
+  const ahead = gpxPointAt(Math.min(300, dist));
+  camera.lookAt(ahead.x, camera.position.y, ahead.z);
+  if (isTouch) syncLook();
+  console.log('GPXトラック読み込み:', data.name, (dist / 1000).toFixed(1) + 'km,', world.length, '点');
+}
+
+function gpxPointAt(d) {
+  const w = gpxTrack.world;
+  if (w[gpxIdx].dist < d) { while (gpxIdx < w.length - 1 && w[gpxIdx].dist < d) gpxIdx++; }
+  else { while (gpxIdx > 1 && w[gpxIdx - 1].dist > d) gpxIdx--; }
+  const a = w[gpxIdx - 1], b = w[gpxIdx];
+  const t = b.dist === a.dist ? 0 : (d - a.dist) / (b.dist - a.dist);
+  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t };
+}
+
+// トラック進行方向に対して右に4mずらすオフセット(線の真下を避ける)
+function gpxOffset(d) {
+  const a = gpxPointAt(Math.max(0, d));
+  const b = gpxPointAt(Math.min(gpxTrack.totalDist, d + 20));
+  const dx = b.x - a.x, dz = b.z - a.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.01) return { x: 4, z: 0 };
+  return { x: -dz / len * 4, z: dx / len * 4 };
+}
+
+// ===== スマホGPS連動(実地登山用・HTTPS接続時のみ) =====
+let gpsWatch = null;
+let gpsStatus = '';
+function toggleGPS() {
+  if (gpsWatch !== null) {
+    navigator.geolocation.clearWatch(gpsWatch);
+    gpsWatch = null;
+    gpsStatus = '';
+    return;
+  }
+  if (!('geolocation' in navigator)) { gpsStatus = 'GPS: この端末では利用できません'; return; }
+  if (!window.isSecureContext) { gpsStatus = 'GPS: HTTPS接続時のみ利用できます'; return; }
+  gpsStatus = 'GPS: 取得中…';
+  gpsWatch = navigator.geolocation.watchPosition(pos => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    const { x, z } = lonLatToWorld(longitude, latitude);
+    if (Math.abs(x) > W / 2 * 0.98 || Math.abs(z) > W / 2 * 0.98) {
+      gpsStatus = `GPS: エリア外です (${latitude.toFixed(3)}, ${longitude.toFixed(3)})`;
+      return;
+    }
+    camera.position.set(x, sampleHeight(x, z) + EYE, z);
+    gpsStatus = `GPS: 追従中 (精度±${accuracy.toFixed(0)}m)`;
+  }, err => {
+    gpsStatus = 'GPS: ' + (err.code === 1 ? '位置情報が許可されていません' : err.message);
+  }, { enableHighAccuracy: true });
+}
+
+// ===== Googleマップ連携 + 現在地名(逆ジオコーディング) =====
+let placeName = '';
+let lastGeo = { x: 1e9, z: 1e9 };
+function gmapsURL() {
+  const { lat, lon } = worldToLonLat(camera.position.x, camera.position.z);
+  // search API形式: 現在地にピンが立つ
+  return `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)}%2C${lon.toFixed(6)}`;
+}
+async function updatePlaceName() {
+  const p = camera.position;
+  if (Math.hypot(p.x - lastGeo.x, p.z - lastGeo.z) < 250) return;
+  lastGeo = { x: p.x, z: p.z };
+  const { lat, lon } = worldToLonLat(p.x, p.z);
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=14&accept-language=ja&lat=${lat.toFixed(5)}&lon=${lon.toFixed(5)}`);
+    const j = await res.json();
+    if (j && j.display_name) placeName = j.display_name.split(',').slice(0, 3).map(s => s.trim()).join(' ');
+  } catch (e) { /* オフライン等は無視 */ }
+}
+setInterval(() => {
+  if (controls.isLocked || mobileActive) updatePlaceName();
+}, 6000);
+document.getElementById('gmapLink').addEventListener('click', e => {
+  e.stopPropagation();
+  window.open(gmapsURL(), '_blank');
+});
+
+// ===== 操作 =====
+const controls = new PointerLockControls(camera, renderer.domElement);
+const keys = {};
+let fly = false;
+let speedScale = 1;
+const velocity = new THREE.Vector3();
+
+addEventListener('keydown', e => {
+  if (e.target && e.target.tagName === 'INPUT') return; // 検索欄の入力はアプリ操作にしない
+  keys[e.code] = true;
+  if (e.code === 'KeyF') fly = !fly;
+  if (e.code === 'KeyR') resetPosition();
+  if (e.code === 'KeyM' && mapSource) {
+    // 地図を開く時はマウスロックを解除してカーソルで操作できるようにする
+    if (!mapOpen && controls.isLocked) { mapPause = true; controls.unlock(); }
+    toggleBigMap();
+  }
+  if (e.code === 'Escape' && mapOpen) {
+    // 地図表示中のEscはメニューへ
+    mapPause = false;
+    toggleBigMap(false);
+    uiExit();
+  }
+  if (e.code === 'KeyT') {
+    routesVisible = !routesVisible;
+    if (routesObj) routesObj.visible = routesVisible;
+  }
+  if (e.code === 'KeyG') window.open(gmapsURL(), '_blank');
+  if (e.code === 'KeyL') {
+    timeIdx = (timeIdx + 1) % TIME_MODES.length;
+    applyEnvironment();
+  }
+  if (e.code === 'KeyK') {
+    envOn = !envOn;
+    applyEnvironment();
+    updatePrecip();
+  }
+  if (e.code === 'KeyN') windOn = !windOn;
+  if (e.code === 'KeyP' && gpxTrack) {
+    gpxPlaying = !gpxPlaying;
+    if (gpxPlaying && gpxDist >= gpxTrack.totalDist) { gpxDist = 0; gpxIdx = 1; } // 最初から
+  }
+  if (e.code === 'KeyO') toggleGPS();
+  if (e.code === 'Equal' || e.code === 'Semicolon' || e.code === 'NumpadAdd') speedScale = Math.min(8, speedScale * 1.5);
+  if (e.code === 'Minus' || e.code === 'NumpadSubtract') speedScale = Math.max(0.25, speedScale / 1.5);
+  if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup', e => keys[e.code] = false);
+
+function resetPosition() {
+  let { x, z } = lonLatToWorld(START.lon, START.lat);
+  if (AREA.lookHorizon) {
+    // カスタム地点: 半径200mの局所最高点にスナップ(尖峰の頂点に正しく立つ)
+    let bh = sampleHeight(x, z), bx = x, bz = z;
+    for (let dz = -200; dz <= 200; dz += 15) {
+      for (let dx = -200; dx <= 200; dx += 15) {
+        const h = sampleHeight(x + dx, z + dz);
+        if (h > bh) { bh = h; bx = x + dx; bz = z + dz; }
+      }
+    }
+    x = bx; z = bz;
+  }
+  camera.position.set(x, sampleHeight(x, z) + EYE, z);
+  if (AREA.lookHorizon) {
+    // カスタム地点: 周囲16方位を調べ、最も視界の開けた方角を水平に見る
+    let bestAng = 0, bestScore = Infinity;
+    for (let k = 0; k < 16; k++) {
+      const ang = k / 16 * 2 * Math.PI;
+      let score = 0;
+      for (const d of [40, 90, 180, 400, 900, 1800]) {
+        const h = sampleHeight(x + Math.sin(ang) * d, z - Math.cos(ang) * d);
+        score += Math.max(0, Math.atan2(h - camera.position.y, d)); // 仰角で評価(近い遮蔽ほど重い)
+      }
+      if (score < bestScore) { bestScore = score; bestAng = ang; }
+    }
+    camera.lookAt(x + Math.sin(bestAng) * 1000, camera.position.y, z - Math.cos(bestAng) * 1000);
+  } else {
+    const t = lonLatToWorld(AREA.look.lon, AREA.look.lat);
+    camera.lookAt(t.x, sampleHeight(t.x, t.z), t.z);
+  }
+  velocity.set(0, 0, 0);
+  if (isTouch) syncLook();
+}
+
+function uiEnter() {
+  ensureAudio(); // クリック(ユーザー操作)を起点に音声を初期化
+  overlay.classList.add('hidden');
+  hud.style.display = 'block';
+  minimapEl.style.display = 'block';
+  if (isTouch) {
+    joyEl.style.display = 'block';
+    mobileButtons.style.display = 'flex';
+    btnMenu.style.display = 'block';
+    syncLook();
+  } else {
+    crosshair.style.display = 'block';
+  }
+}
+function uiExit() {
+  gpxPlaying = false;
+  overlay.classList.remove('hidden');
+  startBtn.textContent = '再開する';
+  hud.style.display = 'none';
+  crosshair.style.display = 'none';
+  minimapEl.style.display = 'none';
+  spotsEl.style.display = 'none';
+  joyEl.style.display = 'none';
+  mobileButtons.style.display = 'none';
+  btnMenu.style.display = 'none';
+  toggleBigMap(false);
+}
+controls.addEventListener('lock', uiEnter);
+controls.addEventListener('unlock', () => { if (!mapPause) uiExit(); });
+// ロック再取得に失敗した場合(ブラウザのクールダウン等)はメニューに戻す
+document.addEventListener('pointerlockerror', () => { if (!controls.isLocked) uiExit(); });
+startBtn.addEventListener('click', () => {
+  if (isTouch) { mobileActive = true; uiEnter(); }
+  else controls.lock();
+});
+
+// ===== タッチ操作(バーチャルスティック + 視点ドラッグ) =====
+let mobileActive = false;
+let yaw = 0, pitch = 0, mobUp = false, mobDown = false;
+const joy = { id: null, dx: 0, dy: 0 };
+const joyEl = document.getElementById('joystick');
+const knobEl = document.getElementById('joyKnob');
+const mobileButtons = document.getElementById('mobileButtons');
+const btnMenu = document.getElementById('btnMenu');
+const btnMode = document.getElementById('btnMode');
+const lookEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+
+function syncLook() {
+  lookEuler.setFromQuaternion(camera.quaternion, 'YXZ');
+  yaw = lookEuler.y;
+  pitch = lookEuler.x;
+}
+function applyLook() {
+  pitch = Math.max(-1.45, Math.min(1.45, pitch));
+  camera.quaternion.setFromEuler(lookEuler.set(pitch, yaw, 0, 'YXZ'));
+}
+
+if (isTouch) {
+  // 移動スティック
+  joyEl.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (joy.id === null) joy.id = e.changedTouches[0].identifier;
+  }, { passive: false });
+  joyEl.addEventListener('touchmove', e => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier !== joy.id) continue;
+      const r = joyEl.getBoundingClientRect();
+      let dx = (t.clientX - (r.left + r.width / 2)) / (r.width / 2);
+      let dy = (t.clientY - (r.top + r.height / 2)) / (r.height / 2);
+      const len = Math.hypot(dx, dy);
+      if (len > 1) { dx /= len; dy /= len; }
+      joy.dx = dx; joy.dy = dy;
+      knobEl.style.transform = `translate(${dx * 35}px, ${dy * 35}px)`;
+    }
+  }, { passive: false });
+  const joyEnd = e => {
+    for (const t of e.changedTouches) {
+      if (t.identifier !== joy.id) continue;
+      joy.id = null; joy.dx = joy.dy = 0;
+      knobEl.style.transform = '';
+    }
+  };
+  joyEl.addEventListener('touchend', joyEnd);
+  joyEl.addEventListener('touchcancel', joyEnd);
+
+  // 視点ドラッグ(3Dキャンバス上)
+  let lookId = null, lx = 0, ly = 0;
+  renderer.domElement.addEventListener('touchstart', e => {
+    if (!mobileActive || lookId !== null) return;
+    const t = e.changedTouches[0];
+    lookId = t.identifier; lx = t.clientX; ly = t.clientY;
+  });
+  renderer.domElement.addEventListener('touchmove', e => {
+    if (!mobileActive) return;
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier !== lookId) continue;
+      yaw -= (t.clientX - lx) * 0.005;
+      pitch -= (t.clientY - ly) * 0.005;
+      lx = t.clientX; ly = t.clientY;
+      applyLook();
+    }
+  }, { passive: false });
+  const lookEnd = e => { for (const t of e.changedTouches) if (t.identifier === lookId) lookId = null; };
+  renderer.domElement.addEventListener('touchend', lookEnd);
+  renderer.domElement.addEventListener('touchcancel', lookEnd);
+
+  // ボタン
+  const hold = (el, set) => {
+    el.addEventListener('touchstart', e => { e.preventDefault(); set(true); }, { passive: false });
+    el.addEventListener('touchend', () => set(false));
+    el.addEventListener('touchcancel', () => set(false));
+  };
+  hold(document.getElementById('btnUp'), v => mobUp = v);
+  hold(document.getElementById('btnDown'), v => mobDown = v);
+  btnMode.addEventListener('click', () => {
+    fly = !fly;
+    btnMode.textContent = fly ? '🥾' : '✈';
+  });
+  document.getElementById('btnMap').addEventListener('click', () => toggleBigMap());
+  document.getElementById('btnTime').addEventListener('click', () => {
+    timeIdx = (timeIdx + 1) % TIME_MODES.length;
+    applyEnvironment();
+  });
+  document.getElementById('btnGPS').addEventListener('click', toggleGPS);
+  btnMenu.addEventListener('click', () => { mobileActive = false; uiExit(); });
+
+  // モバイル向けレイアウト調整
+  minimapEl.style.width = minimapEl.style.height = '150px';
+  hud.style.bottom = 'auto';
+  hud.style.top = '14px';
+  hud.style.fontSize = '11px';
+  spotsEl.style.top = '74px';
+  spotsEl.style.fontSize = '11px';
+  spotsEl.style.minWidth = '150px';
+  document.querySelector('.help').innerHTML =
+    '<b>左下スティック</b>: 移動 &nbsp; <b>画面ドラッグ</b>: 視点<br>' +
+    '<b>✈/🥾</b>: 飛行・徒歩切替 &nbsp; <b>▲▼</b>: 上昇/下降(飛行時)<br>' +
+    '<b>🗺</b>: 全体マップ &nbsp; <b>☰</b>: メニュー(エリア変更)';
+}
+
+// ===== HUD =====
+const DIRS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+function updateHUD() {
+  const p = camera.position;
+  const { lat, lon } = worldToLonLat(p.x, p.z);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  let deg = Math.atan2(dir.x, -dir.z) * 180 / Math.PI;
+  if (deg < 0) deg += 360;
+  const compass = DIRS[Math.round(deg / 45) % 8];
+  const routeText = {
+    loading: '取得中…',
+    ok: `${routeCount}本 ${routesVisible ? '表示' : 'OFF'}`,
+    none: 'データなし',
+    error: '取得失敗',
+  }[routeStatus];
+  hud.textContent =
+    `標高 ${p.y.toFixed(0)} m   方角 ${compass} (${deg.toFixed(0)}°)\n` +
+    `緯度 ${lat.toFixed(4)}  経度 ${lon.toFixed(4)}\n` +
+    (placeName ? `📍 ${placeName}\n` : '') +
+    `モード: ${fly ? '✈ 飛行' : '🥾 徒歩'}   速度 x${speedScale.toFixed(2)}   ルート: ${routeText}\n` +
+    `時間帯: ${TIME_MODES[timeIdx].name}${env.label ? `   天気: ${env.label}${envOn ? '' : ' (OFF)'}` : ''}${windOn ? '' : '   🔇'}` +
+    (gpxTrack ? `\nGPX: ${gpxTrack.name}  ${(gpxDist / 1000).toFixed(1)} / ${(gpxTrack.totalDist / 1000).toFixed(1)} km  ${gpxPlaying ? '▶ 再生中 (Pで停止)' : '(Pで再生)'}` : '') +
+    (gpsStatus ? `\n${gpsStatus}` : '');
+}
+
+// ===== メインループ =====
+const clock = new THREE.Clock();
+const fwd = new THREE.Vector3(), right = new THREE.Vector3();
+let spotsTimer = 0;
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  if (controls.isLocked || mobileActive || window.__walkTest) {
+    const sprint = keys['ShiftLeft'] || keys['ShiftRight'] ? 4 : 1;
+    const base = (fly ? 80 : 18) * sprint * speedScale;
+    camera.getWorldDirection(fwd);
+    if (!fly) { fwd.y = 0; fwd.normalize(); }
+    right.crossVectors(fwd, camera.up).normalize();
+
+    if (gpxPlaying && gpxTrack) {
+      // GPX再生: 軌跡に沿って進む(視点は自由)
+      gpxDist = Math.min(gpxTrack.totalDist, gpxDist + dt * 3 * sprint * speedScale);
+      const gp = gpxPointAt(gpxDist);
+      const goff = gpxOffset(gpxDist);
+      camera.position.x = gp.x + goff.x;
+      camera.position.z = gp.z + goff.z;
+      if (gpxDist >= gpxTrack.totalDist) gpxPlaying = false;
+      velocity.set(0, 0, 0);
+    } else {
+      const acc = new THREE.Vector3();
+      if (keys['KeyW'] || keys['ArrowUp']) acc.add(fwd);
+      if (keys['KeyS'] || keys['ArrowDown']) acc.sub(fwd);
+      if (keys['KeyD'] || keys['ArrowRight']) acc.add(right);
+      if (keys['KeyA'] || keys['ArrowLeft']) acc.sub(right);
+      if (fly && (keys['Space'] || mobUp)) acc.y += 1;
+      if (fly && (keys['KeyC'] || mobDown)) acc.y -= 1;
+      if (joy.id !== null && (Math.abs(joy.dx) > 0.15 || Math.abs(joy.dy) > 0.15)) {
+        acc.addScaledVector(fwd, -joy.dy);
+        acc.addScaledVector(right, joy.dx);
+      }
+      if (acc.lengthSq() > 0) acc.normalize().multiplyScalar(base * 8);
+
+      velocity.addScaledVector(acc, dt);
+      velocity.multiplyScalar(Math.max(0, 1 - 8 * dt)); // 減衰
+      if (velocity.length() > base) velocity.setLength(base);
+      camera.position.addScaledVector(velocity, dt);
+    }
+
+    // 範囲内に制限(シームレスモードでは無制限)
+    if (!SEAMLESS) {
+      const lim = W / 2 * 0.98;
+      camera.position.x = Math.max(-lim, Math.min(lim, camera.position.x));
+      camera.position.z = Math.max(-lim, Math.min(lim, camera.position.z));
+    }
+
+    const ground = sampleHeight(camera.position.x, camera.position.z);
+    if (fly) {
+      if (camera.position.y < ground + 2) camera.position.y = ground + 2;
+    } else {
+      camera.position.y = ground + EYE;
+    }
+    updateHUD();
+  }
+
+  // ラベルは距離に応じてスケール(見かけの大きさを一定に)
+  for (const sp of labels) {
+    const d = sp.position.distanceTo(camera.position);
+    const s = d * 0.045;
+    sp.scale.set(s * sp.userData.aspect, s, 1);
+  }
+
+  // マップ描画
+  if (minimapEl.style.display === 'block') drawMap(mmCtx, 420, false);
+  if (mapOpen) drawMap(bmCtx, 1024, true);
+
+  // 星空はカメラに追従
+  stars.position.copy(camera.position);
+
+  // 水面の波紋アニメーション
+  if (waterMat) waterMat.uniforms.uTime.value += dt;
+
+  // 降水パーティクル
+  if (precipObj) {
+    precipObj.position.copy(camera.position);
+    const arr = precipObj.geometry.attributes.position;
+    const fall = env.precip === 'snow' ? 2.5 : 22;
+    const tEl = clock.elapsedTime;
+    for (let i = 0; i < arr.count; i++) {
+      let y = arr.getY(i) - fall * dt;
+      if (env.precip === 'snow') arr.setX(i, arr.getX(i) + Math.sin(tEl * 0.8 + i) * dt * 1.5);
+      if (y < -200) y += 400;
+      arr.setY(i, y);
+    }
+    arr.needsUpdate = true;
+  }
+
+  // 近くのスポット(0.7秒ごとに更新) + 風音
+  spotsTimer += dt;
+  if (spotsTimer > 0.7) {
+    spotsTimer = 0;
+    if (controls.isLocked || mobileActive || window.__walkTest) updateSpots();
+    updateWind();
+    if (SEAMLESS) {
+      seamlessUpdate();
+      if (seaMesh) { seaMesh.position.x = camera.position.x; seaMesh.position.z = camera.position.z; }
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  if (routeLineMat) routeLineMat.resolution.set(innerWidth, innerHeight);
+  if (gpxLineMat) gpxLineMat.resolution.set(innerWidth, innerHeight);
+});
+
+// ===== 起動 =====
+(async () => {
+  try {
+    let fails = 0, total = 0;
+    if (SEAMLESS) {
+      // 中心の近距離3×3 + 遠距離3×3チャンクを先に読み込む
+      const cn = cameraTile(ZOOM), cf = cameraTile(FAR_Z);
+      const jobs = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        jobs.push([ZOOM, cn.x + dx, cn.y + dy]);
+        jobs.push([FAR_Z, cf.x + dx, cf.y + dy]);
+      }
+      // 標高を先に全取得(チャンク境界の縫合を確実にするため)
+      statusEl.textContent = '標高データを読み込み中…';
+      await Promise.all(jobs.map(([z, x, y]) => fetchDEMTile(z, x, y)));
+      let done = 0;
+      await Promise.all(jobs.map(([z, x, y]) => loadChunk(z, x, y).then(() => {
+        done++;
+        fillEl.style.width = (done / jobs.length * 80).toFixed(0) + '%';
+        statusEl.textContent = `シームレス地形を読み込み中… (${done}/${jobs.length}チャンク)`;
+      })));
+      statusEl.textContent = 'マップ用の衛星写真を読み込み中…';
+      loaded = GRID * GRID; // 進捗バーの辻褄合わせ(標高はチャンク側で取得済み)
+      const { tex } = await loadImagery();
+      mapSource = tex.image;
+    } else {
+      await loadElevation();
+      statusEl.textContent = '地形メッシュを生成中…';
+      const r = await loadImagery();
+      fails = r.fails; total = r.total;
+      buildTerrain(r.tex);
+      mapSource = r.tex.image;
+    }
+    addPeakLabels();
+    resetPosition();
+    loadGPXTrack();
+    statusEl.textContent = fails > 0
+      ? `準備完了(衛星写真 ${fails}/${total} 枚は取得失敗)`
+      : `準備完了!${AREA.startName}から${AREA.lookName || AREA.label}を望んでいます`;
+    startBtn.disabled = false;
+    startBtn.textContent = 'クリックして散歩を開始';
+    applyEnvironment();
+    animate();
+    // 現地のリアルタイム天気(?precip=snow / ?precip=rain で強制テスト可)
+    loadWeather().finally(() => {
+      const forced = QS.get('precip');
+      if (forced === 'snow' || forced === 'rain') {
+        env.precip = forced;
+        env.vis = 0.3;
+        env.cloud = Math.max(env.cloud, 0.85);
+        env.label = (forced === 'snow' ? '🌨 降雪' : '🌧 降雨') + '(テスト)';
+        applyEnvironment();
+        updatePrecip();
+      }
+    });
+    loadRoutes().finally(() => loadPOIs()); // ルート→スポットの順に裏で取得(開始をブロックしない)
+  } catch (e) {
+    statusEl.textContent = 'エラー: ' + e.message + '(ネットワーク接続を確認してください)';
+    console.error(e);
+  }
+})();
+
+// デバッグ・検証用
+window.__app = { camera, sampleHeight, lonLatToWorld, worldToLonLat, scene, resetPosition,
+  updateSpots, mapView, env, applyEnvironment, updatePrecip, toggleGPS,
+  get gpx() { return { track: gpxTrack, dist: gpxDist, playing: gpxPlaying }; },
+  get chunks() { return [...chunkStore.entries()].map(([k, v]) => k + ':' + v.state); },
+  seamlessUpdate,
+  get gpsStatus() { return gpsStatus; },
+  drawBigMap() { drawMap(bmCtx, 1024, true); },
+  get pois() { return pois; },
+  get placeName() { return placeName; },
+  get routeInfo() { return { status: routeStatus, count: routeCount, visible: routesVisible }; },
+  setView(lat, lon, y, lookLat, lookLon) {
+    const p = lonLatToWorld(lon, lat);
+    camera.position.set(p.x, y ?? sampleHeight(p.x, p.z) + EYE, p.z);
+    if (lookLat != null) {
+      const t = lonLatToWorld(lookLon, lookLat);
+      camera.lookAt(t.x, sampleHeight(t.x, t.z), t.z);
+    }
+  } };
+</script>
+</body>
+</html>
