@@ -678,6 +678,11 @@ function applyEnvironment() {
   sun.intensity = (0.05 + 2.75 * dayF + 1.2 * duskF) * (1 - cloud * 0.75);
   sun.color.copy(SUN_DAY).lerp(SUN_DUSK, duskF);
   hemi.intensity = 0.25 + (1.25 * dayF + 2.6 * duskF) * (1 - cloud * 0.35);
+  // シームレスモードはチャンク境界の陰影の継ぎ目を目立たせないよう、幾何陰影を弱め環境光を足す
+  if (SEAMLESS) {
+    sun.intensity *= 0.45;
+    hemi.intensity += 1.4 * dayF + 0.3;
+  }
 
   scene.fog.density = 0.000022 / Math.max(0.15, visF) * (1 + cloud * 1.2);
   scene.fog.color.copy(FOG_DAY).lerp(FOG_DUSK, duskF).lerp(FOG_NIGHT, nightF);
@@ -1041,21 +1046,43 @@ function buildChunkMesh(hArr, z, x, y, tex) {
       idx[q++] = b; idx[q++] = d; idx[q++] = c;
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-  geo.setIndex(new THREE.BufferAttribute(idx, 1));
-  geo.computeVertexNormals();
-  // スカートの法線を地表の縁と揃え、暗い壁として目立たないようにする
-  const nrm = geo.attributes.normal;
+  // 法線を標高データから直接計算(隣接タイルを参照し、境界で陰影が食い違わないように)
+  const clamp255 = v => (v < 0 ? 0 : v > 255 ? 255 : v);
+  const hN = (di, dj) => {
+    if (di < 0) { const j = clamp255(dj); return nbL ? nbL[j * 256 + 255] : hArr[j * 256]; }
+    if (di > 255) { const j = clamp255(dj); return nbR ? nbR[j * 256] : hArr[j * 256 + 255]; }
+    if (dj < 0) { const i = clamp255(di); return nbU ? nbU[255 * 256 + i] : hArr[i]; }
+    if (dj > 255) { const i = clamp255(di); return nbD ? nbD[i] : hArr[255 * 256 + i]; }
+    return hArr[dj * 256 + di];
+  };
+  const wpp = (W / (N - 1)) * scaleToBase; // 隣接DEMサンプル間のワールド距離(m)
+  const nrmArr = new Float32Array(total * 3);
+  for (let mj = 0; mj < M; mj++) {
+    const dj = Math.min(255, mj * step);
+    for (let mi = 0; mi < M; mi++) {
+      const di = Math.min(255, mi * step);
+      const k = mj * M + mi;
+      const nx = -(hN(di + step, dj) - hN(di - step, dj));
+      const nz = -(hN(di, dj + step) - hN(di, dj - step));
+      const ny = 2 * step * wpp;
+      const inv = 1 / Math.hypot(nx, ny, nz);
+      nrmArr[k * 3] = nx * inv; nrmArr[k * 3 + 1] = ny * inv; nrmArr[k * 3 + 2] = nz * inv;
+    }
+  }
+  // スカートは対応する縁の法線をコピー(暗い壁として目立たせない)
   let sv = M * M;
   for (const edge of edges) {
     for (let t = 0; t < M; t++) {
       const src = edge(t);
-      nrm.setXYZ(sv, nrm.getX(src), nrm.getY(src), nrm.getZ(src));
+      nrmArr[sv * 3] = nrmArr[src * 3]; nrmArr[sv * 3 + 1] = nrmArr[src * 3 + 1]; nrmArr[sv * 3 + 2] = nrmArr[src * 3 + 2];
       sv++;
     }
   }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setAttribute('normal', new THREE.BufferAttribute(nrmArr, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
   const mat = makeTerrainMaterial(tex, scaleToBase / GRID);
   mat.side = THREE.DoubleSide;
   return new THREE.Mesh(geo, mat);
