@@ -1085,7 +1085,15 @@ function buildChunkMesh(hArr, z, x, y, tex) {
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   const mat = makeTerrainMaterial(tex, scaleToBase / GRID);
   mat.side = THREE.DoubleSide;
-  return new THREE.Mesh(geo, mat);
+  // 遠距離チャンクは深度を後方にバイアスし、近距離チャンクと重なる場所で粗い面が飛び出す(地割れ)のを防ぐ
+  if (isFar) {
+    mat.polygonOffset = true;
+    mat.polygonOffsetFactor = 12;
+    mat.polygonOffsetUnits = 4000;
+  }
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = isFar ? 0 : 1; // 近景を後に描画
+  return mesh;
 }
 
 async function loadChunk(z, x, y) {
