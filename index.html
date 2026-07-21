@@ -2356,11 +2356,19 @@ function animate() {
       camera.position.z = Math.max(-lim, Math.min(lim, camera.position.z));
     }
 
-    const ground = sampleHeight(camera.position.x, camera.position.z);
+    const cx2 = camera.position.x, cz2 = camera.position.z;
+    const ground = sampleHeight(cx2, cz2);
     if (fly) {
       if (camera.position.y < ground + 2) camera.position.y = ground + 2;
     } else {
-      camera.position.y = ground + EYE;
+      // 急斜面で上り側の地面を頭上に貫通しないよう、周囲2.5mの最高点を基準にする
+      let maxNear = ground;
+      const R = 2.5;
+      for (let a = 0; a < 8; a++) {
+        const h = sampleHeight(cx2 + Math.cos(a * 0.785) * R, cz2 + Math.sin(a * 0.785) * R);
+        if (h > maxNear) maxNear = h;
+      }
+      camera.position.y = Math.max(ground + EYE, maxNear + 0.9);
     }
     updateHUD();
   }
